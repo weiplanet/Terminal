@@ -13,9 +13,9 @@ using static ColorTool.ConsoleAPI;
 
 namespace ColorTool.SchemeParsers
 {
-    class JsonParser : ISchemeParser
+    class JsonParser : SchemeParserBase
     {
-        private const string FileExtension = ".json";
+        public override string FileExtension { get; } = ".json";
         private static readonly IReadOnlyList<string> ConcfgColorNames = new[]
         {
             "black",        // Dark Black
@@ -36,12 +36,9 @@ namespace ColorTool.SchemeParsers
             "white"         // Bright White
         };
 
-        public string Name { get; } = "concfg Parser";
+        public override string Name { get; } = "concfg Parser";
 
-        public bool CanParse(string schemeName) => 
-            string.Equals(Path.GetExtension(schemeName), FileExtension, StringComparison.OrdinalIgnoreCase);
-
-        public ColorScheme ParseScheme(string schemeName, bool reportErrors = false)
+        public override ColorScheme ParseScheme(string schemeName, bool reportErrors = false)
         {
             XmlDocument xmlDoc = LoadJsonFile(schemeName);
             if (xmlDoc == null) return null;
@@ -98,7 +95,7 @@ namespace ColorTool.SchemeParsers
                 }
 
                 var consoleAttributes = new ConsoleAttributes(screenBackground, screenForeground, popupBackground, popupForeground);
-                return new ColorScheme(colorTable, consoleAttributes);
+                return new ColorScheme(ExtractSchemeName(schemeName), colorTable, consoleAttributes);
             }
             catch (Exception /*e*/)
             {
@@ -117,25 +114,29 @@ namespace ColorTool.SchemeParsers
             return RGB(col.R, col.G, col.B);
         }
 
-        private static XmlDocument LoadJsonFile(string schemeName)
-        {
-            XmlDocument xmlDoc = new XmlDocument();
-            foreach (string path in SchemeManager.GetSearchPaths(schemeName, FileExtension)
-                              .Where(File.Exists))
+        private XmlDocument LoadJsonFile(string schemeName) =>
+            SchemeManager
+            .GetSearchPaths(schemeName, FileExtension)
+            .Select(path =>
             {
                 try
                 {
                     var data = File.ReadAllBytes(path);
-                    var reader = JsonReaderWriterFactory.CreateJsonReader(data, System.Xml.XmlDictionaryReaderQuotas.Max);
+                    var reader = JsonReaderWriterFactory.CreateJsonReader(data, XmlDictionaryReaderQuotas.Max);
+                    var xmlDoc = new XmlDocument();
                     xmlDoc.Load(reader);
                     return xmlDoc;
                 }
-                catch (XmlException /*e*/) { /* failed to parse */ }
-                catch (IOException /*e*/) { /* failed to find */ }
-                catch (UnauthorizedAccessException /*e*/) { /* unauthorized */ }
-            }
-
-            return null;
-        }
+                catch (XmlException) { }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"Unexpected Exception: {e}.\nBailing...");
+                    throw;
+                }
+                return null;
+            })
+            .FirstOrDefault(x => x != null);
     }
 }

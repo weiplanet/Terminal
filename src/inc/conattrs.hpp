@@ -6,38 +6,35 @@ Licensed under the MIT license.
 
 #define FG_ATTRS (FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_RED | FOREGROUND_INTENSITY)
 #define BG_ATTRS (BACKGROUND_BLUE | BACKGROUND_GREEN | BACKGROUND_RED | BACKGROUND_INTENSITY)
-#define META_ATTRS (COMMON_LVB_LEADING_BYTE | COMMON_LVB_TRAILING_BYTE | COMMON_LVB_GRID_HORIZONTAL | COMMON_LVB_GRID_LVERTICAL | COMMON_LVB_GRID_RVERTICAL | COMMON_LVB_REVERSE_VIDEO | COMMON_LVB_UNDERSCORE )
+#define META_ATTRS (COMMON_LVB_LEADING_BYTE | COMMON_LVB_TRAILING_BYTE | COMMON_LVB_GRID_HORIZONTAL | COMMON_LVB_GRID_LVERTICAL | COMMON_LVB_GRID_RVERTICAL | COMMON_LVB_REVERSE_VIDEO | COMMON_LVB_UNDERSCORE)
 
-WORD FindNearestTableIndex(const COLORREF Color,
-                           _In_reads_(cColorTable) const COLORREF* const ColorTable,
-                           const WORD cColorTable);
-
-bool FindTableIndex(const COLORREF Color,
-                    _In_reads_(cColorTable) const COLORREF* const ColorTable,
-                    const WORD cColorTable,
-                    _Out_ WORD* const pFoundIndex);
+enum class ExtendedAttributes : BYTE
+{
+    Normal = 0x00,
+    Bold = 0x01,
+    Italics = 0x02,
+    Blinking = 0x04,
+    Invisible = 0x08,
+    CrossedOut = 0x10,
+    Underlined = 0x20,
+    DoublyUnderlined = 0x40,
+    Faint = 0x80,
+};
+DEFINE_ENUM_FLAG_OPERATORS(ExtendedAttributes);
 
 WORD XtermToWindowsIndex(const size_t index) noexcept;
 WORD Xterm256ToWindowsIndex(const size_t index) noexcept;
 WORD XtermToLegacy(const size_t xtermForeground, const size_t xtermBackground);
 
-COLORREF ForegroundColor(const WORD wLegacyAttrs,
-                         _In_reads_(cColorTable) const COLORREF* const ColorTable,
-                         const size_t cColorTable);
+const WORD WINDOWS_RED_ATTR = FOREGROUND_RED;
+const WORD WINDOWS_GREEN_ATTR = FOREGROUND_GREEN;
+const WORD WINDOWS_BLUE_ATTR = FOREGROUND_BLUE;
+const WORD WINDOWS_BRIGHT_ATTR = FOREGROUND_INTENSITY;
 
-COLORREF BackgroundColor(const WORD wLegacyAttrs,
-                         _In_reads_(cColorTable) const COLORREF* const ColorTable,
-                         const size_t cColorTable);
-
-const WORD WINDOWS_RED_ATTR     = FOREGROUND_RED;
-const WORD WINDOWS_GREEN_ATTR   = FOREGROUND_GREEN;
-const WORD WINDOWS_BLUE_ATTR    = FOREGROUND_BLUE;
-const WORD WINDOWS_BRIGHT_ATTR  = FOREGROUND_INTENSITY;
-
-const WORD XTERM_RED_ATTR       = 0x01;
-const WORD XTERM_GREEN_ATTR     = 0x02;
-const WORD XTERM_BLUE_ATTR      = 0x04;
-const WORD XTERM_BRIGHT_ATTR    = 0x08;
+const WORD XTERM_RED_ATTR = 0x01;
+const WORD XTERM_GREEN_ATTR = 0x02;
+const WORD XTERM_BLUE_ATTR = 0x04;
+const WORD XTERM_BRIGHT_ATTR = 0x08;
 
 enum class CursorType : unsigned int
 {

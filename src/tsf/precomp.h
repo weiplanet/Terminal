@@ -19,28 +19,27 @@ Notes:
 
 --*/
 
+#define NOMINMAX
+
 #define _OLEAUT32_
-#include <windows.h>
 #include <ole2.h>
+#include <windows.h>
 
-#include <atlbase.h>        // ATL base
+extern "C" {
+#include <winuser.h>
 
-extern "C"
-{
-    #include <winuser.h>
-
-    #include <stdlib.h>
-    #include <string.h>
-    #include <stdio.h>
-    #include <limits.h>
-
-    #include <ime.h>
-    #include <strsafe.h>
-    #include <intsafe.h>
+#include <ime.h>
+#include <intsafe.h>
+#include <strsafe.h>
 }
 
-#include <msctf.h>          // Cicero header
-#include <tsattrs.h>        // ITextStore standard attributes
+#include <climits>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
+#include <msctf.h> // Cicero header
+#include <tsattrs.h> // ITextStore standard attributes
 
 // This includes support libraries from the CRT, STL, WIL, and GSL
 #include "LibraryIncludes.h"
@@ -49,7 +48,5 @@ extern "C"
 
 #include "globals.h"
 
-#include "TfCtxtComp.h"
 #include "ConsoleTSF.h"
-
-
+#include "TfCtxtComp.h"

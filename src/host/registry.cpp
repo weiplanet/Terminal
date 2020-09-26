@@ -14,15 +14,15 @@
 
 #define SET_FIELD_AND_SIZE(x) FIELD_OFFSET(Settings, (x)), RTL_FIELD_SIZE(Settings, (x))
 
+using Microsoft::Console::Interactivity::ServiceLocator;
+
 Registry::Registry(_In_ Settings* const pSettings) :
     _pSettings(pSettings)
 {
-
 }
 
 Registry::~Registry()
 {
-
 }
 
 // Routine Description:
@@ -51,7 +51,7 @@ void Registry::GetEditKeys(_In_opt_ HKEY hConsoleKey) const
                                                  CONSOLE_REGISTRY_ALLOW_ALTF4_CLOSE,
                                                  sizeof(dwValue),
                                                  REG_DWORD,
-                                                 (PBYTE)& dwValue,
+                                                 (PBYTE)&dwValue,
                                                  nullptr);
     if (NT_SUCCESS(Status) && dwValue <= 1)
     {
@@ -142,7 +142,6 @@ void Registry::_LoadMappedProperties(_In_reads_(cPropertyMappings) const Registr
         case RegistrySerialization::_RegPropertyType::Byte:
         case RegistrySerialization::_RegPropertyType::Coordinate:
         {
-
             Status = RegistrySerialization::s_LoadRegDword(hKey, pPropMap, _pSettings);
             break;
         }
@@ -274,7 +273,7 @@ void Registry::LoadFromRegistry(_In_ PCWSTR const pwszConsoleTitle)
                                                  CONSOLE_REGISTRY_CODEPAGE,
                                                  sizeof(dwValue),
                                                  REG_DWORD,
-                                                 (PBYTE)& dwValue,
+                                                 (PBYTE)&dwValue,
                                                  nullptr);
     if (NT_SUCCESS(Status))
     {
@@ -284,7 +283,7 @@ void Registry::LoadFromRegistry(_In_ PCWSTR const pwszConsoleTitle)
         // then make sure code page value when East Asian environment.
         // If code page value does not the same to OEMCP and any EA's code page then
         // we are override code page value to OEMCP on default console property.
-        // Because, East Asian environment has limitation that doesn not switch to
+        // Because, East Asian environment has limitation that does not switch to
         // another EA's code page by the SetConsoleCP/SetConsoleOutputCP.
         //
         // Compare of pwszConsoleTitle and L"" has limit to default property of console.
@@ -307,7 +306,7 @@ void Registry::LoadFromRegistry(_In_ PCWSTR const pwszConsoleTitle)
                                                      awchBuffer,
                                                      sizeof(dwValue),
                                                      REG_DWORD,
-                                                     (PBYTE)& dwValue,
+                                                     (PBYTE)&dwValue,
                                                      nullptr);
         if (NT_SUCCESS(Status))
         {

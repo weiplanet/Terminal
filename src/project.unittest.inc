@@ -9,7 +9,7 @@
 # Preprocessor Settings
 # -------------------------------------
 
-C_DEFINES               = $(C_DEFINES) -DINLINE_TEST_METHOD_MARKUP -DUNIT_TESTING
+C_DEFINES               = $(C_DEFINES) -DINLINE_TEST_METHOD_MARKUP -DUNIT_TESTING -DFMT_HEADER_ONLY
 
 # -------------------------------------
 # Program Information
@@ -26,11 +26,12 @@ TEST_CODE               = 1
 INCLUDES = \
     $(INCLUDES); \
     $(CONSOLE_SRC_PATH)\inc\test; \
+    $(CONSOLE_SRC_PATH)\..\..\inc; \
     $(ONECORESDKTOOLS_INTERNAL_INC_PATH_L)\wextest\cue; \
 
 TARGETLIBS = \
     $(TARGETLIBS) \
-    $(ONECORE_SDK_LIB_VPATH)\onecore.lib \
+    $(ONECORE_EXTERNAL_SDK_LIB_VPATH_L)\onecore.lib \
     $(ONECORESDKTOOLS_INTERNAL_LIB_PATH_L)\WexTest\Cue\Wex.Common.lib \
     $(ONECORESDKTOOLS_INTERNAL_LIB_PATH_L)\WexTest\Cue\Wex.Logger.lib \
     $(ONECORESDKTOOLS_INTERNAL_LIB_PATH_L)\WexTest\Cue\Te.Common.lib \

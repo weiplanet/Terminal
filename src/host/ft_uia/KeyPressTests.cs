@@ -30,6 +30,7 @@ namespace Conhost.UIA.Tests
         public TestContext TestContext { get; set; }
 
         [TestMethod]
+        [TestProperty("Ignore", "True")] // GH#7282 - investigate and reenable
         public void VerifyCtrlKeysBash()
         {
             using (RegistryHelper reg = new RegistryHelper())
@@ -69,6 +70,7 @@ namespace Conhost.UIA.Tests
         }
 
         [TestMethod]
+        [TestProperty("Ignore", "True")] // GH#7282 - investigate and reenable
         public void VerifyCtrlCBash()
         {
             using (RegistryHelper reg = new RegistryHelper())
@@ -208,7 +210,7 @@ namespace Conhost.UIA.Tests
                         for (int i = 0; i < text.Count(); ++i)
                         {
                             string line = text.ElementAt(i);
-                            line.Trim(' ');
+                            line = line.Trim(' ');
                             if (!line.Equals(""))
                             {
                                 possiblePromptLines.Add(line);

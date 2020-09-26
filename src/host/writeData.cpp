@@ -24,12 +24,14 @@
 WriteData::WriteData(SCREEN_INFORMATION& siContext,
                      _In_reads_bytes_(cbContext) wchar_t* const pwchContext,
                      const size_t cbContext,
-                     const UINT uiOutputCodepage) :
+                     const UINT uiOutputCodepage,
+                     const bool requiresVtQuirk) :
     IWaitRoutine(ReplyDataType::Write),
     _siContext(siContext),
     _pwchContext(THROW_IF_NULL_ALLOC(reinterpret_cast<wchar_t*>(new byte[cbContext]))),
     _cbContext(cbContext),
     _uiOutputCodepage(uiOutputCodepage),
+    _requiresVtQuirk(requiresVtQuirk),
     _fLeadByteCaptured(false),
     _fLeadByteConsumed(false),
     _cchUtf8Consumed(0)
@@ -117,13 +119,14 @@ bool WriteData::Notify(const WaitTerminationReason TerminationReason,
     // This routine should be called by a thread owning the same lock on the
     // same console as we're reading from.
 
-    FAIL_FAST_IF(!(ServiceLocator::LocateGlobals().getConsoleInformation().IsConsoleLocked()));
+    FAIL_FAST_IF(!(Microsoft::Console::Interactivity::ServiceLocator::LocateGlobals().getConsoleInformation().IsConsoleLocked()));
 
     std::unique_ptr<WriteData> waiter;
     size_t cbContext = _cbContext;
     NTSTATUS Status = DoWriteConsole(_pwchContext,
                                      &cbContext,
                                      _siContext,
+                                     _requiresVtQuirk,
                                      waiter);
 
     if (Status == CONSOLE_STATUS_WAIT)

@@ -8,7 +8,7 @@
 #include "../types/inc/viewport.hpp"
 
 using namespace Microsoft::Console::Types;
-
+using namespace Microsoft::Console::Interactivity;
 
 // Routine Description:
 // - Determines whether the console is in a selecting state
@@ -98,7 +98,7 @@ bool Selection::IsAreaSelected() const
 }
 
 // Routine Description:
-// - Determines whether mark mode specifically started this selction.
+// - Determines whether mark mode specifically started this selection.
 // Arguments:
 // - <none>
 // Return Value:
@@ -211,7 +211,7 @@ SMALL_RECT Selection::GetSelectionRectangle() const noexcept
 }
 
 // Routine Description:
-// - Gets the publically facing set of selection flags.
+// - Gets the publicly facing set of selection flags.
 //   Strips out any internal flags in use.
 // Arguments:
 // - none

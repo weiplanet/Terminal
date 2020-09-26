@@ -14,75 +14,128 @@ Author(s):
 
 --*/
 #pragma once
-#include "ColorScheme.h"
 
-namespace TerminalApp
+#include "Profile.g.h"
+
+#include "../inc/cppwinrt_utils.h"
+#include "JsonUtils.h"
+#include <DefaultSettings.h>
+
+// fwdecl unittest classes
+namespace TerminalAppLocalTests
 {
-    class Profile;
+    class SettingsTests;
+    class ProfileTests;
+};
+namespace TerminalAppUnitTests
+{
+    class JsonTests;
+    class DynamicProfileTests;
 };
 
-class TerminalApp::Profile final
+// GUID used for generating GUIDs at runtime, for profiles that did not have a
+// GUID specified manually.
+constexpr GUID RUNTIME_GENERATED_PROFILE_NAMESPACE_GUID = { 0xf65ddb7e, 0x706b, 0x4499, { 0x8a, 0x50, 0x40, 0x31, 0x3c, 0xaf, 0x51, 0x0a } };
+
+namespace winrt::TerminalApp::implementation
 {
+    struct Profile : ProfileT<Profile>
+    {
+    public:
+        Profile();
+        Profile(guid guid);
 
-public:
-    Profile();
-    ~Profile();
+        Json::Value GenerateStub() const;
+        static com_ptr<Profile> FromJson(const Json::Value& json);
+        bool ShouldBeLayered(const Json::Value& json) const;
+        void LayerJson(const Json::Value& json);
+        static bool IsDynamicProfileObject(const Json::Value& json);
 
-    winrt::Microsoft::Terminal::Settings::TerminalSettings CreateTerminalSettings(const std::vector<::TerminalApp::ColorScheme>& schemes) const;
+        hstring EvaluatedStartingDirectory() const;
+        hstring ExpandedIconPath() const;
+        hstring ExpandedBackgroundImagePath() const;
+        void GenerateGuidIfNecessary() noexcept;
+        static guid GetGuidOrGenerateForJson(const Json::Value& json) noexcept;
 
-    winrt::Windows::Data::Json::JsonObject ToJson() const;
-    static Profile FromJson(winrt::Windows::Data::Json::JsonObject json);
+        bool HasGuid() const noexcept;
+        winrt::guid Guid() const;
+        void Guid(const winrt::guid& guid) noexcept;
 
-    GUID GetGuid() const noexcept;
-    std::wstring_view GetName() const noexcept;
+        bool HasConnectionType() const noexcept;
+        winrt::guid ConnectionType() const noexcept;
+        void ConnectionType(const winrt::guid& conType) noexcept;
 
-    void SetFontFace(std::wstring fontFace) noexcept;
-    void SetColorScheme(std::optional<std::wstring> schemeName) noexcept;
-    void SetAcrylicOpacity(double opacity) noexcept;
-    void SetCommandline(std::wstring cmdline) noexcept;
-    void SetName(std::wstring name) noexcept;
-    void SetUseAcrylic(bool useAcrylic) noexcept;
-    void SetDefaultForeground(COLORREF defaultForeground) noexcept;
-    void SetDefaultBackground(COLORREF defaultBackground) noexcept;
+        // BackgroundImageAlignment is 1 setting saved as 2 separate values
+        const Windows::UI::Xaml::HorizontalAlignment BackgroundImageHorizontalAlignment() const noexcept;
+        void BackgroundImageHorizontalAlignment(const Windows::UI::Xaml::HorizontalAlignment& value) noexcept;
+        const Windows::UI::Xaml::VerticalAlignment BackgroundImageVerticalAlignment() const noexcept;
+        void BackgroundImageVerticalAlignment(const Windows::UI::Xaml::VerticalAlignment& value) noexcept;
 
-    bool HasIcon() const noexcept;
-    std::wstring_view GetIconPath() const noexcept;
+        GETSET_PROPERTY(hstring, Name, L"Default");
+        GETSET_PROPERTY(hstring, Source);
+        GETSET_PROPERTY(bool, Hidden, false);
 
-    bool GetCloseOnExit() const noexcept;
+        GETSET_PROPERTY(hstring, IconPath);
 
-private:
+        GETSET_PROPERTY(CloseOnExitMode, CloseOnExit, CloseOnExitMode::Graceful);
+        GETSET_PROPERTY(hstring, TabTitle);
+        GETSET_PROPERTY(Windows::Foundation::IReference<Windows::UI::Color>, TabColor);
+        GETSET_PROPERTY(bool, SuppressApplicationTitle, false);
 
-    static std::wstring EvaluateStartingDirectory(const std::wstring& directory);
+        GETSET_PROPERTY(bool, UseAcrylic, false);
+        GETSET_PROPERTY(double, AcrylicOpacity, 0.5);
+        GETSET_PROPERTY(Microsoft::Terminal::TerminalControl::ScrollbarState, ScrollState, Microsoft::Terminal::TerminalControl::ScrollbarState::Visible);
 
-    static winrt::Microsoft::Terminal::Settings::ScrollbarState ParseScrollbarState(const std::wstring& scrollbarState);
-    static winrt::Microsoft::Terminal::Settings::CursorStyle _ParseCursorShape(const std::wstring& cursorShapeString);
-    static std::wstring _SerializeCursorStyle(const winrt::Microsoft::Terminal::Settings::CursorStyle cursorShape);
+        GETSET_PROPERTY(hstring, FontFace, DEFAULT_FONT_FACE);
+        GETSET_PROPERTY(int32_t, FontSize, DEFAULT_FONT_SIZE);
+        GETSET_PROPERTY(Windows::UI::Text::FontWeight, FontWeight, DEFAULT_FONT_WEIGHT);
+        GETSET_PROPERTY(hstring, Padding, DEFAULT_PADDING);
 
-    GUID _guid;
-    std::wstring _name;
+        GETSET_PROPERTY(hstring, Commandline, L"cmd.exe");
+        GETSET_PROPERTY(hstring, StartingDirectory);
 
-    // If this is set, then our colors should come from the associated color scheme
-    std::optional<std::wstring> _schemeName;
+        GETSET_PROPERTY(hstring, BackgroundImagePath);
+        GETSET_PROPERTY(double, BackgroundImageOpacity, 1.0);
+        GETSET_PROPERTY(Windows::UI::Xaml::Media::Stretch, BackgroundImageStretchMode, Windows::UI::Xaml::Media::Stretch::Fill);
 
-    std::optional<uint32_t> _defaultForeground;
-    std::optional<uint32_t> _defaultBackground;
-    std::array<uint32_t, COLOR_TABLE_SIZE> _colorTable;
-    int32_t _historySize;
-    bool _snapOnInput;
-    uint32_t _cursorColor;
-    uint32_t _cursorHeight;
-    winrt::Microsoft::Terminal::Settings::CursorStyle _cursorShape;
+        GETSET_PROPERTY(Microsoft::Terminal::TerminalControl::TextAntialiasingMode, AntialiasingMode, Microsoft::Terminal::TerminalControl::TextAntialiasingMode::Grayscale);
+        GETSET_PROPERTY(bool, RetroTerminalEffect, false);
+        GETSET_PROPERTY(bool, ForceFullRepaintRendering, false);
+        GETSET_PROPERTY(bool, SoftwareRendering, false);
 
-    std::wstring _commandline;
-    std::wstring _fontFace;
-    std::optional<std::wstring> _startingDirectory;
-    int32_t _fontSize;
-    double _acrylicTransparency;
-    bool _useAcrylic;
+        GETSET_PROPERTY(hstring, ColorSchemeName, L"Campbell");
+        GETSET_PROPERTY(Windows::Foundation::IReference<Windows::UI::Color>, Foreground);
+        GETSET_PROPERTY(Windows::Foundation::IReference<Windows::UI::Color>, Background);
+        GETSET_PROPERTY(Windows::Foundation::IReference<Windows::UI::Color>, SelectionBackground);
+        GETSET_PROPERTY(Windows::Foundation::IReference<Windows::UI::Color>, CursorColor);
 
-    std::optional<std::wstring> _scrollbarState;
-    bool _closeOnExit;
-    std::wstring _padding;
+        GETSET_PROPERTY(int32_t, HistorySize, DEFAULT_HISTORY_SIZE);
+        GETSET_PROPERTY(bool, SnapOnInput, true);
+        GETSET_PROPERTY(bool, AltGrAliasing, true);
 
-    std::optional<std::wstring> _icon;
-};
+        GETSET_PROPERTY(Microsoft::Terminal::TerminalControl::CursorStyle, CursorShape, Microsoft::Terminal::TerminalControl::CursorStyle::Bar);
+        GETSET_PROPERTY(uint32_t, CursorHeight, DEFAULT_CURSOR_HEIGHT);
+
+    private:
+        std::optional<winrt::guid> _Guid{ std::nullopt };
+        std::optional<winrt::guid> _ConnectionType{ std::nullopt };
+        std::tuple<Windows::UI::Xaml::HorizontalAlignment, Windows::UI::Xaml::VerticalAlignment> _BackgroundImageAlignment{
+            Windows::UI::Xaml::HorizontalAlignment::Center,
+            Windows::UI::Xaml::VerticalAlignment::Center
+        };
+
+        static std::wstring EvaluateStartingDirectory(const std::wstring& directory);
+
+        static guid _GenerateGuidForProfile(const hstring& name, const hstring& source) noexcept;
+
+        friend class TerminalAppLocalTests::SettingsTests;
+        friend class TerminalAppLocalTests::ProfileTests;
+        friend class TerminalAppUnitTests::JsonTests;
+        friend class TerminalAppUnitTests::DynamicProfileTests;
+    };
+}
+
+namespace winrt::TerminalApp::factory_implementation
+{
+    BASIC_FACTORY(Profile);
+}

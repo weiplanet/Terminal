@@ -34,7 +34,7 @@ public:
     SMALL_RECT rcViewCaWindow;
     COORD coordConView;
 
-    ConversionAreaBufferInfo(const COORD coordBufferSize);
+    explicit ConversionAreaBufferInfo(const COORD coordBufferSize);
 };
 
 class ConversionAreaInfo final
@@ -42,8 +42,8 @@ class ConversionAreaInfo final
 public:
     ConversionAreaInfo(const COORD bufferSize,
                        const COORD windowSize,
-                       const CHAR_INFO fill,
-                       const CHAR_INFO popupFill,
+                       const TextAttribute& fill,
+                       const TextAttribute& popupFill,
                        const FontInfo fontInfo);
     ~ConversionAreaInfo() = default;
     ConversionAreaInfo(const ConversionAreaInfo&) = delete;
@@ -55,8 +55,7 @@ public:
     void SetHidden(const bool fIsHidden) noexcept;
     void ClearArea() noexcept;
 
-    [[nodiscard]]
-    HRESULT Resize(const COORD newSize) noexcept;
+    [[nodiscard]] HRESULT Resize(const COORD newSize) noexcept;
 
     void SetViewPos(const COORD pos) noexcept;
     void SetWindowInfo(const SMALL_RECT view) noexcept;

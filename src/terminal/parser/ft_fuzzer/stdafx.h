@@ -3,6 +3,11 @@
 
 #pragma once
 
+#define NOMINMAX
+
 #include <windows.h>
-#include <atlstr.h>
-#include <stdio.h>
+#include <shlwapi.h>
+#include <cstdio>
+
+// This includes support libraries from the CRT, STL, WIL, and GSL
+#include "LibraryIncludes.h"

@@ -23,73 +23,129 @@ namespace Microsoft::Console::VirtualTerminal
     {
     public:
         TerminalInput(_In_ std::function<void(std::deque<std::unique_ptr<IInputEvent>>&)> pfn);
-        ~TerminalInput();
 
-        bool HandleKey(const IInputEvent* const pInEvent) const;
-        void ChangeKeypadMode(const bool fApplicationMode);
-        void ChangeCursorKeysMode(const bool fApplicationMode);
+        TerminalInput() = delete;
+        TerminalInput(const TerminalInput& old) = default;
+        TerminalInput(TerminalInput&& moved) = default;
 
-    private:
+        TerminalInput& operator=(const TerminalInput& old) = default;
+        TerminalInput& operator=(TerminalInput&& moved) = default;
 
-        std::function<void(std::deque<std::unique_ptr<IInputEvent>>&)> _pfnWriteEvents;
-        bool _fKeypadApplicationMode = false;
-        bool _fCursorApplicationMode = false;
+        ~TerminalInput() = default;
 
-        void _SendNullInputSequence(const DWORD dwControlKeyState) const;
-        void _SendInputSequence(_In_ PCWSTR const pwszSequence) const;
-        void _SendEscapedInputSequence(const wchar_t wch) const;
+        bool HandleKey(const IInputEvent* const pInEvent);
+        void ChangeAnsiMode(const bool ansiMode) noexcept;
+        void ChangeKeypadMode(const bool applicationMode) noexcept;
+        void ChangeCursorKeysMode(const bool applicationMode) noexcept;
 
-        struct _TermKeyMap
+        void ChangeWin32InputMode(const bool win32InputMode) noexcept;
+        void ForceDisableWin32InputMode(const bool win32InputMode) noexcept;
+
+#pragma region MouseInput
+        // These methods are defined in mouseInput.cpp
+
+        struct MouseButtonState
         {
-            WORD const wVirtualKey;
-            PCWSTR const pwszSequence;
-            DWORD const dwModifiers;
-
-            static const size_t s_cchMaxSequenceLength;
-
-            _TermKeyMap(const WORD wVirtualKey, _In_ PCWSTR const pwszSequence) :
-                wVirtualKey(wVirtualKey),
-                pwszSequence(pwszSequence),
-                dwModifiers(0) {};
-
-            _TermKeyMap(const WORD wVirtualKey, const DWORD dwModifiers, _In_ PCWSTR const pwszSequence) :
-                wVirtualKey(wVirtualKey),
-                pwszSequence(pwszSequence),
-                dwModifiers(dwModifiers) {};
-
-            // C++11 syntax for prohibiting assignment
-            // We can't assign, everything here is const.
-            // We also shouldn't need to, this is only for a specific table.
-            _TermKeyMap& operator=(const _TermKeyMap&) = delete;
+            bool isLeftButtonDown;
+            bool isMiddleButtonDown;
+            bool isRightButtonDown;
         };
 
-        static const _TermKeyMap s_rgCursorKeysNormalMapping[];
-        static const _TermKeyMap s_rgCursorKeysApplicationMapping[];
-        static const _TermKeyMap s_rgKeypadNumericMapping[];
-        static const _TermKeyMap s_rgKeypadApplicationMapping[];
-        static const _TermKeyMap s_rgModifierKeyMapping[];
-        static const _TermKeyMap s_rgSimpleModifedKeyMapping[];
+        bool HandleMouse(const COORD position,
+                         const unsigned int button,
+                         const short modifierKeyState,
+                         const short delta,
+                         const MouseButtonState state);
 
-        static const size_t s_cCursorKeysNormalMapping;
-        static const size_t s_cCursorKeysApplicationMapping;
-        static const size_t s_cKeypadNumericMapping;
-        static const size_t s_cKeypadApplicationMapping;
-        static const size_t s_cModifierKeyMapping;
-        static const size_t s_cSimpleModifedKeyMapping;
+        bool IsTrackingMouseInput() const noexcept;
+#pragma endregion
 
-        bool _SearchKeyMapping(const KeyEvent& keyEvent,
-                                _In_reads_(cKeyMapping) const TerminalInput::_TermKeyMap* keyMapping,
-                                const size_t cKeyMapping,
-                                _Out_ const TerminalInput::_TermKeyMap** pMatchingMapping) const;
-        bool _TranslateDefaultMapping(const KeyEvent& keyEvent,
-                                        _In_reads_(cKeyMapping) const TerminalInput::_TermKeyMap* keyMapping,
-                                        const size_t cKeyMapping) const;
-        bool _SearchWithModifier(const KeyEvent& keyEvent) const;
+#pragma region MouseInputState Management
+        // These methods are defined in mouseInputState.cpp
+        void SetUtf8ExtendedMode(const bool enable) noexcept;
+        void SetSGRExtendedMode(const bool enable) noexcept;
 
+        void EnableDefaultTracking(const bool enable) noexcept;
+        void EnableButtonEventTracking(const bool enable) noexcept;
+        void EnableAnyEventTracking(const bool enable) noexcept;
 
-    public:
-        const size_t GetKeyMappingLength(const KeyEvent& keyEvent) const;
-        const _TermKeyMap* GetKeyMapping(const KeyEvent& keyEvent) const;
+        void EnableAlternateScroll(const bool enable) noexcept;
+        void UseAlternateScreenBuffer() noexcept;
+        void UseMainScreenBuffer() noexcept;
+#pragma endregion
 
+    private:
+        std::function<void(std::deque<std::unique_ptr<IInputEvent>>&)> _pfnWriteEvents;
+
+        // storage location for the leading surrogate of a utf-16 surrogate pair
+        std::optional<wchar_t> _leadingSurrogate;
+
+        bool _ansiMode{ true };
+        bool _keypadApplicationMode{ false };
+        bool _cursorApplicationMode{ false };
+        bool _win32InputMode{ false };
+        bool _forceDisableWin32InputMode{ false };
+
+        void _SendChar(const wchar_t ch);
+        void _SendNullInputSequence(const DWORD dwControlKeyState) const;
+        void _SendInputSequence(const std::wstring_view sequence) const noexcept;
+        void _SendEscapedInputSequence(const wchar_t wch) const;
+        static std::wstring _GenerateWin32KeySequence(const KeyEvent& key);
+
+#pragma region MouseInputState Management
+        // These methods are defined in mouseInputState.cpp
+        enum class ExtendedMode : unsigned int
+        {
+            None,
+            Utf8,
+            Sgr,
+            Urxvt
+        };
+
+        enum class TrackingMode : unsigned int
+        {
+            None,
+            Default,
+            ButtonEvent,
+            AnyEvent
+        };
+
+        struct MouseInputState
+        {
+            ExtendedMode extendedMode{ ExtendedMode::None };
+            TrackingMode trackingMode{ TrackingMode::None };
+            bool alternateScroll{ false };
+            bool inAlternateBuffer{ false };
+            COORD lastPos{ -1, -1 };
+            unsigned int lastButton{ 0 };
+            int accumulatedDelta{ 0 };
+        };
+
+        MouseInputState _mouseInputState;
+#pragma endregion
+
+#pragma region MouseInput
+        static std::wstring _GenerateDefaultSequence(const COORD position,
+                                                     const unsigned int button,
+                                                     const bool isHover,
+                                                     const short modifierKeyState,
+                                                     const short delta);
+        static std::wstring _GenerateUtf8Sequence(const COORD position,
+                                                  const unsigned int button,
+                                                  const bool isHover,
+                                                  const short modifierKeyState,
+                                                  const short delta);
+        static std::wstring _GenerateSGRSequence(const COORD position,
+                                                 const unsigned int button,
+                                                 const bool isDown,
+                                                 const bool isHover,
+                                                 const short modifierKeyState,
+                                                 const short delta);
+
+        bool _ShouldSendAlternateScroll(const unsigned int button, const short delta) const noexcept;
+        bool _SendAlternateScroll(const short delta) const noexcept;
+
+        static constexpr unsigned int s_GetPressedButton(const MouseButtonState state) noexcept;
+#pragma endregion
     };
 }

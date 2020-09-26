@@ -102,8 +102,7 @@ GdiEngine::~GdiEngine()
 // - hwnd - Handle to the window on which we will be drawing.
 // Return Value:
 // - S_OK if set successfully or relevant GDI error via HRESULT.
-[[nodiscard]]
-HRESULT GdiEngine::SetHwnd(const HWND hwnd) noexcept
+[[nodiscard]] HRESULT GdiEngine::SetHwnd(const HWND hwnd) noexcept
 {
     // First attempt to get the DC and create an appropriate DC
     HDC const hdcRealWindow = GetDC(hwnd);
@@ -135,7 +134,7 @@ HRESULT GdiEngine::SetHwnd(const HWND hwnd) noexcept
     }
 
 #if DBG
-    if (_debugWindow != INVALID_HANDLE_VALUE && _debugWindow != 0)
+    if (_debugWindow != INVALID_HANDLE_VALUE && _debugWindow != nullptr)
     {
         RECT rc = { 0 };
         THROW_IF_WIN32_BOOL_FALSE(GetWindowRect(_hwndTargetWindow, &rc));
@@ -155,8 +154,7 @@ HRESULT GdiEngine::SetHwnd(const HWND hwnd) noexcept
 // - dwNewLong - Value to update in window structure
 // Return Value:
 // - S_OK or converted HRESULT from last Win32 error from SetWindowLongW
-[[nodiscard]]
-HRESULT GdiEngine::s_SetWindowLongWHelper(const HWND hWnd, const int nIndex, const LONG dwNewLong) noexcept
+[[nodiscard]] HRESULT GdiEngine::s_SetWindowLongWHelper(const HWND hWnd, const int nIndex, const LONG dwNewLong) noexcept
 {
     // SetWindowLong has strange error handling. On success, it returns the previous Window Long value and doesn't modify the Last Error state.
     // To deal with this, we set the last error to 0/S_OK first, call it, and if the previous long was 0, we check if the error was non-zero before reporting.
@@ -175,26 +173,23 @@ HRESULT GdiEngine::s_SetWindowLongWHelper(const HWND hWnd, const int nIndex, con
 // Routine Description:
 // - This method will set the GDI brushes in the drawing context (and update the hung-window background color)
 // Arguments:
-// - colorForeground - Foreground Color
-// - colorBackground - Background colo
-// - legacyColorAttribute - <unused>
-// - isBold - <unused>
+// - textAttributes - Text attributes to use for the brush color
+// - pData - The interface to console data structures required for rendering
 // - isSettingDefaultBrushes - Lets us know that the default brushes are being set so we can update the DC background
 //                             and the hung app background painting color
 // Return Value:
 // - S_OK if set successfully or relevant GDI error via HRESULT.
-[[nodiscard]]
-HRESULT GdiEngine::UpdateDrawingBrushes(const COLORREF colorForeground,
-                                        const COLORREF colorBackground,
-                                        const WORD /*legacyColorAttribute*/,
-                                        const bool /*isBold*/,
-                                        const bool isSettingDefaultBrushes) noexcept
+[[nodiscard]] HRESULT GdiEngine::UpdateDrawingBrushes(const TextAttribute& textAttributes,
+                                                      const gsl::not_null<IRenderData*> pData,
+                                                      const bool isSettingDefaultBrushes) noexcept
 {
     RETURN_IF_FAILED(_FlushBufferLines());
 
     RETURN_HR_IF_NULL(HRESULT_FROM_WIN32(ERROR_INVALID_STATE), _hdcMemoryContext);
 
     // Set the colors for painting text
+    const auto [colorForeground, colorBackground] = pData->GetAttributeColors(textAttributes);
+
     if (colorForeground != _lastFg)
     {
         RETURN_HR_IF(E_FAIL, CLR_INVALID == SetTextColor(_hdcMemoryContext, colorForeground));
@@ -226,8 +221,7 @@ HRESULT GdiEngine::UpdateDrawingBrushes(const COLORREF colorForeground,
 // - Font - reference to font information where the chosen font information will be populated.
 // Return Value:
 // - S_OK if set successfully or relevant GDI error via HRESULT.
-[[nodiscard]]
-HRESULT GdiEngine::UpdateFont(const FontInfoDesired& FontDesired, _Out_ FontInfo& Font) noexcept
+[[nodiscard]] HRESULT GdiEngine::UpdateFont(const FontInfoDesired& FontDesired, _Out_ FontInfo& Font) noexcept
 {
     wil::unique_hfont hFont;
     RETURN_IF_FAILED(_GetProposedFont(FontDesired, Font, _iCurrentDpi, hFont));
@@ -237,6 +231,61 @@ HRESULT GdiEngine::UpdateFont(const FontInfoDesired& FontDesired, _Out_ FontInfo
 
     // Save off the font metrics for various other calculations
     RETURN_HR_IF(E_FAIL, !(GetTextMetricsW(_hdcMemoryContext, &_tmFontMetrics)));
+
+    // There is no font metric for the grid line width, so we use a small
+    // multiple of the font size, which typically rounds to a pixel.
+    const auto fontSize = _tmFontMetrics.tmHeight - _tmFontMetrics.tmInternalLeading;
+    _lineMetrics.gridlineWidth = std::lround(fontSize * 0.025);
+
+    OUTLINETEXTMETRICW outlineMetrics;
+    if (GetOutlineTextMetricsW(_hdcMemoryContext, sizeof(outlineMetrics), &outlineMetrics))
+    {
+        // For TrueType fonts, the other line metrics can be obtained from
+        // the font's outline text metric structure.
+        _lineMetrics.underlineOffset = outlineMetrics.otmsUnderscorePosition;
+        _lineMetrics.underlineWidth = outlineMetrics.otmsUnderscoreSize;
+        _lineMetrics.strikethroughOffset = outlineMetrics.otmsStrikeoutPosition;
+        _lineMetrics.strikethroughWidth = outlineMetrics.otmsStrikeoutSize;
+    }
+    else
+    {
+        // If we can't obtain the outline metrics for the font, we just pick
+        // some reasonable values for the offsets and widths.
+        _lineMetrics.underlineOffset = -std::lround(fontSize * 0.05);
+        _lineMetrics.underlineWidth = _lineMetrics.gridlineWidth;
+        _lineMetrics.strikethroughOffset = std::lround(_tmFontMetrics.tmAscent / 3.0);
+        _lineMetrics.strikethroughWidth = _lineMetrics.gridlineWidth;
+    }
+
+    // We always want the lines to be visible, so if a stroke width ends
+    // up being zero, we need to make it at least 1 pixel.
+    _lineMetrics.gridlineWidth = std::max(_lineMetrics.gridlineWidth, 1);
+    _lineMetrics.underlineWidth = std::max(_lineMetrics.underlineWidth, 1);
+    _lineMetrics.strikethroughWidth = std::max(_lineMetrics.strikethroughWidth, 1);
+
+    // Offsets are relative to the base line of the font, so we subtract
+    // from the ascent to get an offset relative to the top of the cell.
+    const auto ascent = _tmFontMetrics.tmAscent;
+    _lineMetrics.underlineOffset = ascent - _lineMetrics.underlineOffset;
+    _lineMetrics.strikethroughOffset = ascent - _lineMetrics.strikethroughOffset;
+
+    // For double underlines we need a second offset, just below the first,
+    // but with a bit of a gap (about double the grid line width).
+    _lineMetrics.underlineOffset2 = _lineMetrics.underlineOffset +
+                                    _lineMetrics.underlineWidth +
+                                    std::lround(fontSize * 0.05);
+
+    // However, we don't want the underline to extend past the bottom of the
+    // cell, so we clamp the offset to fit just inside.
+    const auto maxUnderlineOffset = Font.GetSize().Y - _lineMetrics.underlineWidth;
+    _lineMetrics.underlineOffset2 = std::min(_lineMetrics.underlineOffset2, maxUnderlineOffset);
+
+    // But if the resulting gap isn't big enough even to register as a thicker
+    // line, it's better to place the second line slightly above the first.
+    if (_lineMetrics.underlineOffset2 < _lineMetrics.underlineOffset + _lineMetrics.gridlineWidth)
+    {
+        _lineMetrics.underlineOffset2 = _lineMetrics.underlineOffset - _lineMetrics.gridlineWidth;
+    }
 
     // Now find the size of a 0 in this current font and save it for conversions done later.
     _coordFontLast = Font.GetSize();
@@ -266,8 +315,7 @@ HRESULT GdiEngine::UpdateFont(const FontInfoDesired& FontDesired, _Out_ FontInfo
 // - iDpi - The Dots Per Inch to use for scaling. We will use this relative to the system default DPI defined in Windows headers as a constant.
 // Return Value:
 // - HRESULT S_OK, GDI-based error code, or safemath error
-[[nodiscard]]
-HRESULT GdiEngine::UpdateDpi(const int iDpi) noexcept
+[[nodiscard]] HRESULT GdiEngine::UpdateDpi(const int iDpi) noexcept
 {
     _iCurrentDpi = iDpi;
     return S_OK;
@@ -280,8 +328,7 @@ HRESULT GdiEngine::UpdateDpi(const int iDpi) noexcept
 // - srNewViewport - The bounds of the new viewport.
 // Return Value:
 // - HRESULT S_OK
-[[nodiscard]]
-HRESULT GdiEngine::UpdateViewport(const SMALL_RECT /*srNewViewport*/) noexcept
+[[nodiscard]] HRESULT GdiEngine::UpdateViewport(const SMALL_RECT /*srNewViewport*/) noexcept
 {
     return S_OK;
 }
@@ -297,8 +344,7 @@ HRESULT GdiEngine::UpdateViewport(const SMALL_RECT /*srNewViewport*/) noexcept
 // - iDpi - The DPI we will have when rendering
 // Return Value:
 // - S_OK if set successfully or relevant GDI error via HRESULT.
-[[nodiscard]]
-HRESULT GdiEngine::GetProposedFont(const FontInfoDesired& FontDesired, _Out_ FontInfo& Font, const int iDpi) noexcept
+[[nodiscard]] HRESULT GdiEngine::GetProposedFont(const FontInfoDesired& FontDesired, _Out_ FontInfo& Font, const int iDpi) noexcept
 {
     wil::unique_hfont hFont;
     return _GetProposedFont(FontDesired, Font, iDpi, hFont);
@@ -311,11 +357,10 @@ HRESULT GdiEngine::GetProposedFont(const FontInfoDesired& FontDesired, _Out_ Fon
 // - newTitle: the new string to use for the title of the window
 // Return Value:
 // -  S_OK if PostMessageW succeeded, otherwise E_FAIL
-[[nodiscard]]
-HRESULT GdiEngine::_DoUpdateTitle(_In_ const std::wstring& /*newTitle*/) noexcept
+[[nodiscard]] HRESULT GdiEngine::_DoUpdateTitle(_In_ const std::wstring& /*newTitle*/) noexcept
 {
     // the CM_UPDATE_TITLE handler in windowproc will query the updated title.
-    return PostMessageW(_hwndTargetWindow, CM_UPDATE_TITLE, 0, (LPARAM)nullptr)? S_OK : E_FAIL;
+    return PostMessageW(_hwndTargetWindow, CM_UPDATE_TITLE, 0, (LPARAM) nullptr) ? S_OK : E_FAIL;
 }
 
 // Routine Description:
@@ -330,11 +375,10 @@ HRESULT GdiEngine::_DoUpdateTitle(_In_ const std::wstring& /*newTitle*/) noexcep
 // - hFont - A smart pointer to receive a handle to a ready-to-use GDI font.
 // Return Value:
 // - S_OK if set successfully or relevant GDI error via HRESULT.
-[[nodiscard]]
-HRESULT GdiEngine::_GetProposedFont(const FontInfoDesired& FontDesired,
-                                    _Out_ FontInfo& Font,
-                                    const int iDpi,
-                                    _Inout_ wil::unique_hfont& hFont) noexcept
+[[nodiscard]] HRESULT GdiEngine::_GetProposedFont(const FontInfoDesired& FontDesired,
+                                                  _Out_ FontInfo& Font,
+                                                  const int iDpi,
+                                                  _Inout_ wil::unique_hfont& hFont) noexcept
 {
     wil::unique_hdc hdcTemp(CreateCompatibleDC(_hdcMemoryContext));
     RETURN_HR_IF_NULL(E_FAIL, hdcTemp.get());
@@ -347,9 +391,9 @@ HRESULT GdiEngine::_GetProposedFont(const FontInfoDesired& FontDesired,
     {
         // We're being asked for the default raster font, which gets special handling. In particular, it's the font
         // returned by GetStockObject(OEM_FIXED_FONT).
-        // We do this because, for instance, if we ask GDI for an 8x12 OEM_FIXED_FONT, 
+        // We do this because, for instance, if we ask GDI for an 8x12 OEM_FIXED_FONT,
         // it may very well decide to choose Courier New instead of the Terminal raster.
-#pragma prefast(suppress:38037, "raster fonts get special handling, we need to get it this way")
+#pragma prefast(suppress : 38037, "raster fonts get special handling, we need to get it this way")
         hFont.reset((HFONT)GetStockObject(OEM_FIXED_FONT));
     }
     else
@@ -383,18 +427,18 @@ HRESULT GdiEngine::_GetProposedFont(const FontInfoDesired& FontDesired,
         // Because the API is affected by the raster/TT status of the actively selected font, we can't have
         // GDI choosing a TT font for us when we ask for Raster. We have to settle for forcing the current system
         // Terminal font to load even if it doesn't have the glyphs necessary such that the APIs continue to work fine.
-        if (0 == wcscmp(FontDesired.GetFaceName(), L"Terminal"))
+        if (FontDesired.GetFaceName() == DEFAULT_RASTER_FONT_FACENAME)
         {
             lf.lfCharSet = OEM_CHARSET;
         }
         else
         {
             CHARSETINFO csi;
-            if (!TranslateCharsetInfo((DWORD *)IntToPtr(FontDesired.GetCodePage()), &csi, TCI_SRCCODEPAGE))
+            if (!TranslateCharsetInfo((DWORD*)IntToPtr(FontDesired.GetCodePage()), &csi, TCI_SRCCODEPAGE))
             {
                 // if we failed to translate from codepage to charset, choose our charset depending on what kind of font we're
                 // dealing with. Raster Fonts need to be presented with the OEM charset, while TT fonts need to be ANSI.
-                csi.ciCharset = (((FontDesired.GetFamily()) & TMPF_TRUETYPE) == TMPF_TRUETYPE) ? ANSI_CHARSET : OEM_CHARSET;
+                csi.ciCharset = FontDesired.IsTrueTypeFont() ? ANSI_CHARSET : OEM_CHARSET;
             }
 
             lf.lfCharSet = (BYTE)csi.ciCharset;
@@ -405,7 +449,7 @@ HRESULT GdiEngine::_GetProposedFont(const FontInfoDesired& FontDesired,
         // NOTE: not using what GDI gave us because some fonts don't quite roundtrip (e.g. MS Gothic and VL Gothic)
         lf.lfPitchAndFamily = (FIXED_PITCH | FF_MODERN);
 
-        wcscpy_s(lf.lfFaceName, ARRAYSIZE(lf.lfFaceName), FontDesired.GetFaceName());
+        RETURN_IF_FAILED(FontDesired.FillLegacyNameBuffer(gsl::make_span(lf.lfFaceName)));
 
         // Create font.
         hFont.reset(CreateFontIndirectW(&lf));
@@ -447,8 +491,14 @@ HRESULT GdiEngine::_GetProposedFont(const FontInfoDesired& FontDesired,
     // Now fill up the FontInfo we were passed with the full details of which font we actually chose
     {
         // Get the actual font face that we chose
-        WCHAR wszFaceName[LF_FACESIZE];
-        RETURN_HR_IF(E_FAIL, !(GetTextFaceW(hdcTemp.get(), ARRAYSIZE(wszFaceName), wszFaceName)));
+        const size_t faceNameLength{ gsl::narrow<size_t>(GetTextFaceW(hdcTemp.get(), 0, nullptr)) };
+
+        std::wstring currentFaceName{};
+        currentFaceName.resize(faceNameLength);
+
+        RETURN_HR_IF(E_FAIL, !(GetTextFaceW(hdcTemp.get(), gsl::narrow_cast<int>(faceNameLength), currentFaceName.data())));
+
+        currentFaceName.resize(faceNameLength - 1); // remove the null terminator (wstring!)
 
         if (FontDesired.IsDefaultRasterFont())
         {
@@ -459,9 +509,9 @@ HRESULT GdiEngine::_GetProposedFont(const FontInfoDesired& FontDesired,
             coordFontRequested.X = (SHORT)s_ShrinkByDpi(coordFont.X, iDpi);
         }
 
-        Font.SetFromEngine(wszFaceName,
+        Font.SetFromEngine(currentFaceName,
                            tm.tmPitchAndFamily,
-                           tm.tmWeight,
+                           gsl::narrow_cast<unsigned int>(tm.tmWeight),
                            FontDesired.IsDefaultRasterFont(),
                            coordFont,
                            coordFontRequested);
@@ -473,11 +523,10 @@ HRESULT GdiEngine::_GetProposedFont(const FontInfoDesired& FontDesired,
 // Routine Description:
 // - Retrieves the current pixel size of the font we have selected for drawing.
 // Arguments:
-// - pFontSize - recieves the current X by Y size of the font.
+// - pFontSize - receives the current X by Y size of the font.
 // Return Value:
 // - S_OK
-[[nodiscard]]
-HRESULT GdiEngine::GetFontSize(_Out_ COORD* const pFontSize) noexcept
+[[nodiscard]] HRESULT GdiEngine::GetFontSize(_Out_ COORD* const pFontSize) noexcept
 {
     *pFontSize = _GetFontSize();
     return S_OK;
@@ -526,5 +575,5 @@ bool GdiEngine::_IsFontTrueType() const
 bool GdiEngine::_IsWindowValid() const
 {
     return _hwndTargetWindow != INVALID_HANDLE_VALUE &&
-        _hwndTargetWindow != nullptr;
+           _hwndTargetWindow != nullptr;
 }

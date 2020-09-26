@@ -11,10 +11,10 @@
 
 #include "../cmdline.h"
 
-
 using namespace WEX::Common;
 using namespace WEX::Logging;
 using namespace WEX::TestExecution;
+using Microsoft::Console::Interactivity::ServiceLocator;
 
 constexpr size_t PROMPT_SIZE = 512;
 
@@ -44,7 +44,7 @@ class CommandLineTests
         m_state->PrepareGlobalInputBuffer();
         m_state->PrepareReadHandle();
         m_state->PrepareCookedReadData();
-        m_pHistory = CommandHistory::s_Allocate(L"cmd.exe", (HANDLE)0);
+        m_pHistory = CommandHistory::s_Allocate(L"cmd.exe", nullptr);
         if (!m_pHistory)
         {
             return false;
@@ -54,7 +54,7 @@ class CommandLineTests
 
     TEST_METHOD_CLEANUP(MethodCleanup)
     {
-        CommandHistory::s_Free((HANDLE)0);
+        CommandHistory::s_Free(nullptr);
         m_pHistory = nullptr;
         m_state->CleanupCookedReadData();
         m_state->CleanupReadHandle();
@@ -67,10 +67,7 @@ class CommandLineTests
     {
         const auto span = cookedReadData.SpanWholeBuffer();
         VERIFY_ARE_EQUAL(cookedReadData._bytesRead, wstr.size() * sizeof(wchar_t));
-        for (size_t i = 0; i < wstr.size(); ++i)
-        {
-            VERIFY_ARE_EQUAL(span.at(i), wstr.at(i));
-        }
+        VERIFY_ARE_EQUAL(wstr, (std::wstring_view{ span.data(), cookedReadData._bytesRead / sizeof(wchar_t) }));
     }
 
     void InitCookedReadData(COOKED_READ_DATA& cookedReadData,
@@ -260,7 +257,6 @@ class CommandLineTests
         VERIFY_ARE_EQUAL(cursorPos.X, gsl::narrow<short>(expectedCursorPos));
         VERIFY_ARE_EQUAL(cookedReadData._currentPosition, expectedCursorPos);
         VERIFY_ARE_EQUAL(cookedReadData._bufPtr, expectedBufferPos);
-
     }
 
     TEST_METHOD(CanMoveCursorToStartOfPrompt)
@@ -374,7 +370,7 @@ class CommandLineTests
         // save current position for later checking
         const auto endCursorPos = cookedReadData._currentPosition;
         const auto endBufferPos = cookedReadData._bufPtr;
-        // NOTE: need to initialize the actualy cursor and keep it up to date with the changes here. remove
+        // NOTE: need to initialize the actually cursor and keep it up to date with the changes here. remove
         once functions are fixed
         // try to move right, nothing should happen
         short expectedPos = gsl::narrow<short>(endCursorPos);

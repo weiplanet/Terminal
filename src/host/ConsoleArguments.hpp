@@ -29,10 +29,8 @@ public:
 
     ConsoleArguments& operator=(const ConsoleArguments& other);
 
-    [[nodiscard]]
-    HRESULT ParseCommandline();
+    [[nodiscard]] HRESULT ParseCommandline();
 
-    bool IsUsingVtPipe() const;
     bool HasVtHandles() const;
     bool InConptyMode() const noexcept;
     bool IsHeadless() const;
@@ -52,22 +50,30 @@ public:
     short GetWidth() const;
     short GetHeight() const;
     bool GetInheritCursor() const;
+    bool IsResizeQuirkEnabled() const;
+    bool IsWin32InputModeEnabled() const;
 
     void SetExpectedSize(COORD dimensions) noexcept;
 
-    static const std::wstring VT_MODE_ARG;
-    static const std::wstring HEADLESS_ARG;
-    static const std::wstring SERVER_HANDLE_ARG;
-    static const std::wstring SIGNAL_HANDLE_ARG;
-    static const std::wstring HANDLE_PREFIX;
-    static const std::wstring CLIENT_COMMANDLINE_ARG;
-    static const std::wstring FORCE_V1_ARG;
-    static const std::wstring FILEPATH_LEADER_PREFIX;
-    static const std::wstring WIDTH_ARG;
-    static const std::wstring HEIGHT_ARG;
-    static const std::wstring INHERIT_CURSOR_ARG;
-    static const std::wstring FEATURE_ARG;
-    static const std::wstring FEATURE_PTY_ARG;
+#ifdef UNIT_TESTING
+    void EnableConptyModeForTests();
+#endif
+
+    static const std::wstring_view VT_MODE_ARG;
+    static const std::wstring_view HEADLESS_ARG;
+    static const std::wstring_view SERVER_HANDLE_ARG;
+    static const std::wstring_view SIGNAL_HANDLE_ARG;
+    static const std::wstring_view HANDLE_PREFIX;
+    static const std::wstring_view CLIENT_COMMANDLINE_ARG;
+    static const std::wstring_view FORCE_V1_ARG;
+    static const std::wstring_view FILEPATH_LEADER_PREFIX;
+    static const std::wstring_view WIDTH_ARG;
+    static const std::wstring_view HEIGHT_ARG;
+    static const std::wstring_view INHERIT_CURSOR_ARG;
+    static const std::wstring_view RESIZE_QUIRK;
+    static const std::wstring_view WIN32_INPUT_MODE;
+    static const std::wstring_view FEATURE_ARG;
+    static const std::wstring_view FEATURE_PTY_ARG;
 
 private:
 #ifdef UNIT_TESTING
@@ -98,11 +104,11 @@ private:
         _serverHandle(serverHandle),
         _signalHandle(signalHandle),
         _inheritCursor(inheritCursor),
-        _recievedEarlySizeChange{ false },
+        _resizeQuirk(false),
+        _receivedEarlySizeChange{ false },
         _originalWidth{ -1 },
         _originalHeight{ -1 }
     {
-
     }
 #endif
 
@@ -126,34 +132,30 @@ private:
     DWORD _serverHandle;
     DWORD _signalHandle;
     bool _inheritCursor;
+    bool _resizeQuirk{ false };
+    bool _win32InputMode{ false };
 
-    bool _recievedEarlySizeChange;
+    bool _receivedEarlySizeChange;
     short _originalWidth;
     short _originalHeight;
 
-    [[nodiscard]]
-    HRESULT _GetClientCommandline(_Inout_ std::vector<std::wstring>& args,
-                                  const size_t index,
-                                  const bool skipFirst);
+    [[nodiscard]] HRESULT _GetClientCommandline(_Inout_ std::vector<std::wstring>& args,
+                                                const size_t index,
+                                                const bool skipFirst);
 
     static void s_ConsumeArg(_Inout_ std::vector<std::wstring>& args,
                              _In_ size_t& index);
-    [[nodiscard]]
-    static HRESULT s_GetArgumentValue(_Inout_ std::vector<std::wstring>& args,
-                                      _Inout_ size_t& index,
-                                      _Out_opt_ std::wstring* const pSetting);
-    [[nodiscard]]
-    static HRESULT s_GetArgumentValue(_Inout_ std::vector<std::wstring>& args,
-                                      _Inout_ size_t& index,
-                                      _Out_opt_ short* const pSetting);
-    [[nodiscard]]
-    static HRESULT s_HandleFeatureValue(_Inout_ std::vector<std::wstring>& args,
-                                        _Inout_ size_t& index);
+    [[nodiscard]] static HRESULT s_GetArgumentValue(_Inout_ std::vector<std::wstring>& args,
+                                                    _Inout_ size_t& index,
+                                                    _Out_opt_ std::wstring* const pSetting);
+    [[nodiscard]] static HRESULT s_GetArgumentValue(_Inout_ std::vector<std::wstring>& args,
+                                                    _Inout_ size_t& index,
+                                                    _Out_opt_ short* const pSetting);
+    [[nodiscard]] static HRESULT s_HandleFeatureValue(_Inout_ std::vector<std::wstring>& args,
+                                                      _Inout_ size_t& index);
 
-    [[nodiscard]]
-    static HRESULT s_ParseHandleArg(const std::wstring& handleAsText,
-                                    _Inout_ DWORD& handleAsVal);
-
+    [[nodiscard]] static HRESULT s_ParseHandleArg(const std::wstring& handleAsText,
+                                                  _Inout_ DWORD& handleAsVal);
 
 #ifdef UNIT_TESTING
     friend class ConsoleArgumentsTests;
@@ -161,10 +163,12 @@ private:
 };
 
 #ifdef UNIT_TESTING
-namespace WEX {
-    namespace TestExecution {
+namespace WEX
+{
+    namespace TestExecution
+    {
         template<>
-        class VerifyOutputTraits < ConsoleArguments >
+        class VerifyOutputTraits<ConsoleArguments>
         {
         public:
             static WEX::Common::NoThrowString ToString(const ConsoleArguments& ci)
@@ -206,26 +210,25 @@ namespace WEX {
         };
 
         template<>
-        class VerifyCompareTraits < ConsoleArguments, ConsoleArguments>
+        class VerifyCompareTraits<ConsoleArguments, ConsoleArguments>
         {
         public:
             static bool AreEqual(const ConsoleArguments& expected, const ConsoleArguments& actual)
             {
-                return
-                    expected.GetClientCommandline() == actual.GetClientCommandline() &&
-                    expected.HasVtHandles() == actual.HasVtHandles() &&
-                    expected.GetVtInHandle() == actual.GetVtInHandle() &&
-                    expected.GetVtOutHandle() == actual.GetVtOutHandle() &&
-                    expected.GetVtMode() == actual.GetVtMode() &&
-                    expected.GetWidth() == actual.GetWidth() &&
-                    expected.GetHeight() == actual.GetHeight() &&
-                    expected.GetForceV1() == actual.GetForceV1() &&
-                    expected.IsHeadless() == actual.IsHeadless() &&
-                    expected.ShouldCreateServerHandle() == actual.ShouldCreateServerHandle() &&
-                    expected.GetServerHandle() == actual.GetServerHandle() &&
-                    expected.HasSignalHandle() == actual.HasSignalHandle() &&
-                    expected.GetSignalHandle() == actual.GetSignalHandle() &&
-                    expected.GetInheritCursor() == actual.GetInheritCursor();
+                return expected.GetClientCommandline() == actual.GetClientCommandline() &&
+                       expected.HasVtHandles() == actual.HasVtHandles() &&
+                       expected.GetVtInHandle() == actual.GetVtInHandle() &&
+                       expected.GetVtOutHandle() == actual.GetVtOutHandle() &&
+                       expected.GetVtMode() == actual.GetVtMode() &&
+                       expected.GetWidth() == actual.GetWidth() &&
+                       expected.GetHeight() == actual.GetHeight() &&
+                       expected.GetForceV1() == actual.GetForceV1() &&
+                       expected.IsHeadless() == actual.IsHeadless() &&
+                       expected.ShouldCreateServerHandle() == actual.ShouldCreateServerHandle() &&
+                       expected.GetServerHandle() == actual.GetServerHandle() &&
+                       expected.HasSignalHandle() == actual.HasSignalHandle() &&
+                       expected.GetSignalHandle() == actual.GetSignalHandle() &&
+                       expected.GetInheritCursor() == actual.GetInheritCursor();
             }
 
             static bool AreSame(const ConsoleArguments& expected, const ConsoleArguments& actual)
@@ -239,19 +242,18 @@ namespace WEX {
 
             static bool IsNull(const ConsoleArguments& object)
             {
-                return
-                    object.GetClientCommandline().empty() &&
-                    (object.GetVtInHandle() == 0 || object.GetVtInHandle() == INVALID_HANDLE_VALUE) &&
-                    (object.GetVtOutHandle() == 0 || object.GetVtOutHandle() == INVALID_HANDLE_VALUE) &&
-                    object.GetVtMode().empty() &&
-                    !object.GetForceV1() &&
-                    (object.GetWidth() == 0) &&
-                    (object.GetHeight() == 0) &&
-                    !object.IsHeadless() &&
-                    !object.ShouldCreateServerHandle() &&
-                    object.GetServerHandle() == 0 &&
-                    (object.GetSignalHandle() == 0 || object.GetSignalHandle() == INVALID_HANDLE_VALUE) &&
-                    !object.GetInheritCursor();
+                return object.GetClientCommandline().empty() &&
+                       (object.GetVtInHandle() == 0 || object.GetVtInHandle() == INVALID_HANDLE_VALUE) &&
+                       (object.GetVtOutHandle() == 0 || object.GetVtOutHandle() == INVALID_HANDLE_VALUE) &&
+                       object.GetVtMode().empty() &&
+                       !object.GetForceV1() &&
+                       (object.GetWidth() == 0) &&
+                       (object.GetHeight() == 0) &&
+                       !object.IsHeadless() &&
+                       !object.ShouldCreateServerHandle() &&
+                       object.GetServerHandle() == 0 &&
+                       (object.GetSignalHandle() == 0 || object.GetSignalHandle() == INVALID_HANDLE_VALUE) &&
+                       !object.GetInheritCursor();
             }
         };
     }

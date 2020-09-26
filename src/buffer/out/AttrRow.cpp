@@ -4,14 +4,14 @@
 #include "precomp.h"
 #include "AttrRow.hpp"
 
- // Routine Description:
- // - constructor
- // Arguments:
- // - cchRowWidth - the length of the default text attribute
- // - attr - the default text attribute
- // Return Value:
- // - constructed object
- // Note: will throw exception if unable to allocate memory for text attribute storage
+// Routine Description:
+// - constructor
+// Arguments:
+// - cchRowWidth - the length of the default text attribute
+// - attr - the default text attribute
+// Return Value:
+// - constructed object
+// Note: will throw exception if unable to allocate memory for text attribute storage
 ATTR_ROW::ATTR_ROW(const UINT cchRowWidth, const TextAttribute attr)
 {
     _list.push_back(TextAttributeRun(cchRowWidth, attr));
@@ -46,7 +46,7 @@ void ATTR_ROW::Resize(const size_t newWidth)
     {
         // Get the attribute that covers the final column of old width.
         const auto runPos = FindAttrIndex(_cchRowWidth - 1, nullptr);
-        auto& run = _list[runPos];
+        auto& run = _list.at(runPos);
 
         // Extend its length by the additional columns we're adding.
         run.SetLength(run.GetLength() + newWidth - _cchRowWidth);
@@ -60,7 +60,7 @@ void ATTR_ROW::Resize(const size_t newWidth)
         // Get the attribute that covers the final column of the new width
         size_t CountOfAttr = 0;
         const auto runPos = FindAttrIndex(newWidth - 1, &CountOfAttr);
-        auto& run = _list[runPos];
+        auto& run = _list.at(runPos);
 
         // CountOfAttr was given to us as "how many columns left from this point forward are covered by the returned run"
         // So if the original run was B5 covering a 5 size OldWidth and we have a NewWidth of 3
@@ -108,7 +108,7 @@ TextAttribute ATTR_ROW::GetAttrByColumn(const size_t column,
 {
     THROW_HR_IF(E_INVALIDARG, column >= _cchRowWidth);
     const auto runPos = FindAttrIndex(column, pApplies);
-    return _list[runPos].GetAttributes();
+    return _list.at(runPos).GetAttributes();
 }
 
 // Routine Description:
@@ -176,6 +176,23 @@ size_t ATTR_ROW::FindAttrIndex(const size_t index, size_t* const pApplies) const
 }
 
 // Routine Description:
+// - Finds the hyperlink IDs present in this row and returns them
+// Return value:
+// - An unordered set containing the hyperlink IDs present in this row
+std::unordered_set<uint16_t> ATTR_ROW::GetHyperlinks()
+{
+    std::unordered_set<uint16_t> ids;
+    for (const auto& run : _list)
+    {
+        if (run.GetAttributes().IsHyperlink())
+        {
+            ids.emplace(run.GetAttributes().GetHyperlinkId());
+        }
+    }
+    return ids;
+}
+
+// Routine Description:
 // - Sets the attributes (colors) of all character positions from the given position through the end of the row.
 // Arguments:
 // - iStart - Starting index position within the row
@@ -189,27 +206,6 @@ bool ATTR_ROW::SetAttrToEnd(const UINT iStart, const TextAttribute attr)
     const TextAttributeRun run(length, attr);
     return SUCCEEDED(InsertAttrRuns({ &run, 1 }, iStart, _cchRowWidth - 1, _cchRowWidth));
 }
-
-// Routine Description:
-// - Replaces all runs in the row with the given wToBeReplacedAttr with the new
-//      attribute wReplaceWith. This method is used for replacing specifically
-//      legacy attributes.
-// Arguments:
-// - wToBeReplacedAttr - the legacy attribute to replace in this row.
-// - wReplaceWith - the new value for the matching runs' attributes.
-// Return Value:
-// <none>
-void ATTR_ROW::ReplaceLegacyAttrs(_In_ WORD wToBeReplacedAttr, _In_ WORD wReplaceWith) noexcept
-{
-    TextAttribute ToBeReplaced;
-    ToBeReplaced.SetFromLegacy(wToBeReplacedAttr);
-
-    TextAttribute ReplaceWith;
-    ReplaceWith.SetFromLegacy(wReplaceWith);
-
-    ReplaceAttrs(ToBeReplaced, ReplaceWith);
-}
-
 
 // Method Description:
 // - Replaces all runs in the row with the given toBeReplacedAttr with the new
@@ -230,7 +226,6 @@ void ATTR_ROW::ReplaceAttrs(const TextAttribute& toBeReplacedAttr, const TextAtt
     }
 }
 
-
 // Routine Description:
 // - Takes a array of attribute runs, and inserts them into this row from startIndex to endIndex.
 // - For example, if the current row was was [{4, BLUE}], the merge string
@@ -245,11 +240,10 @@ void ATTR_ROW::ReplaceAttrs(const TextAttribute& toBeReplacedAttr, const TextAtt
 // Return Value:
 // - STATUS_NO_MEMORY if there wasn't enough memory to insert the runs
 //   otherwise STATUS_SUCCESS if we were successful.
-[[nodiscard]]
-HRESULT ATTR_ROW::InsertAttrRuns(const std::basic_string_view<TextAttributeRun> newAttrs,
-                                 const size_t iStart,
-                                 const size_t iEnd,
-                                 const size_t cBufferWidth)
+[[nodiscard]] HRESULT ATTR_ROW::InsertAttrRuns(const gsl::span<const TextAttributeRun> newAttrs,
+                                               const size_t iStart,
+                                               const size_t iEnd,
+                                               const size_t cBufferWidth)
 {
     // Definitions:
     // Existing Run = The run length encoded color array we're already storing in memory before this was called.
@@ -273,7 +267,7 @@ HRESULT ATTR_ROW::InsertAttrRuns(const std::basic_string_view<TextAttributeRun> 
     if (newAttrs.size() == 1)
     {
         // Get the new color attribute we're trying to apply
-        const TextAttribute NewAttr = newAttrs.at(0).GetAttributes();
+        const TextAttribute NewAttr = til::at(newAttrs, 0).GetAttributes();
 
         // If the existing run was only 1 element...
         // ...and the new color is the same as the old, we don't have to do anything and can exit quick.
@@ -281,31 +275,112 @@ HRESULT ATTR_ROW::InsertAttrRuns(const std::basic_string_view<TextAttributeRun> 
         {
             return S_OK;
         }
-        // .. otherwise if we internally have a list of 2 and we're about to insert a single color
-        // it's probable that we're just walking left-to-right through the row and changing each
-        // cell one at a time.
-        // e.g.
-        // AAAAABBBBBBB
-        // AAAAAABBBBBB
-        // AAAAAAABBBBB
-        // Check for that circumstance by seeing if we're inserting a single run of the
-        // left side color right at the boundary and just adjust the counts in the existing
-        // two elements in our internal list.
-        else if (_list.size() == 2 && newAttrs.at(0).GetLength() == 1)
+        // .. otherwise if we internally have a list of 2 or more and we're about to insert a single color
+        // it's possible that we just walk left-to-right through the row and find a quick exit.
+        else if (iStart >= 0 && iStart == iEnd)
         {
-            auto left = _list.begin();
-            if (iStart == left->GetLength() && NewAttr == left->GetAttributes())
+            // First we try to find the run where the insertion happens, using lowerBound and upperBound to track
+            // where we are currently at.
+            const auto begin = _list.begin();
+            size_t lowerBound = 0;
+            size_t upperBound = 0;
+            for (size_t i = 0; i < _list.size(); i++)
             {
-                auto right = left + 1;
-                left->IncrementLength();
-                right->DecrementLength();
+                const auto curr = begin + i;
+                upperBound += curr->GetLength();
 
-                // If we just reduced the right half to zero, just erase it out of the list.
-                if (right->GetLength() == 0)
+                if (iStart >= lowerBound && iStart < upperBound)
                 {
-                    _list.erase(right);
+                    // The run that we try to insert into has the same color as the new one.
+                    // e.g.
+                    // AAAAABBBBBBBCCC
+                    //       ^
+                    // AAAAABBBBBBBCCC
+                    //
+                    // 'B' is the new color and '^' represents where iStart is. We don't have to
+                    // do anything.
+                    if (curr->GetAttributes() == NewAttr)
+                    {
+                        return S_OK;
+                    }
+
+                    // If the current run has length of exactly one, we can simply change the attribute
+                    // of the current run.
+                    // e.g.
+                    // AAAAABCCCCCCCCC
+                    //      ^
+                    // AAAAADCCCCCCCCC
+                    //
+                    // Here 'D' is the new color.
+                    if (curr->GetLength() == 1)
+                    {
+                        curr->SetAttributes(NewAttr);
+                        return S_OK;
+                    }
+
+                    // If the insertion happens at current run's lower boundary...
+                    if (iStart == lowerBound && i > 0)
+                    {
+                        const auto prev = std::prev(curr, 1);
+                        // ... and the previous run has the same color as the new one, we can
+                        // just adjust the counts in the existing two elements in our internal list.
+                        // e.g.
+                        // AAAAABBBBBBBCCC
+                        //      ^
+                        // AAAAAABBBBBBCCC
+                        //
+                        // Here 'A' is the new color.
+                        if (NewAttr == prev->GetAttributes())
+                        {
+                            prev->IncrementLength();
+                            curr->DecrementLength();
+
+                            // If we just reduced the right half to zero, just erase it out of the list.
+                            if (curr->GetLength() == 0)
+                            {
+                                _list.erase(curr);
+                            }
+
+                            return S_OK;
+                        }
+                    }
+
+                    // If the insertion happens at current run's upper boundary...
+                    if (iStart == upperBound - 1 && i + 1 < _list.size())
+                    {
+                        // ...then let's try our luck with the next run if possible. This is basically the opposite
+                        // of what we did with the previous run.
+                        // e.g.
+                        // AAAAAABBBBBBCCC
+                        //      ^
+                        // AAAAABBBBBBBCCC
+                        //
+                        // Here 'B' is the new color.
+                        const auto next = std::next(curr, 1);
+                        if (NewAttr == next->GetAttributes())
+                        {
+                            curr->DecrementLength();
+                            next->IncrementLength();
+
+                            if (curr->GetLength() == 0)
+                            {
+                                _list.erase(curr);
+                            }
+
+                            return S_OK;
+                        }
+                    }
                 }
-                return S_OK;
+
+                // Advance one run in the _list.
+                lowerBound = upperBound;
+
+                // The lowerBound is larger than iStart, which means we fail to find an early exit at the run
+                // where the insertion happens. We can just break out.
+                if (lowerBound > iStart)
+                {
+                    break;
+                }
             }
         }
     }
@@ -314,7 +389,7 @@ HRESULT ATTR_ROW::InsertAttrRuns(const std::basic_string_view<TextAttributeRun> 
     if (iStart == 0 && iEnd == iLastBufferCol)
     {
         // Just dump what we're given over what we have and call it a day.
-        _list.assign(newAttrs.cbegin(), newAttrs.cend());
+        _list.assign(newAttrs.begin(), newAttrs.end());
 
         return S_OK;
     }
@@ -328,7 +403,7 @@ HRESULT ATTR_ROW::InsertAttrRuns(const std::basic_string_view<TextAttributeRun> 
     // fact that an existing piece of the run was split in half (to hold the latter half).
     const size_t cNewRun = _list.size() + newAttrs.size() + 1;
     std::vector<TextAttributeRun> newRun;
-    newRun.resize(cNewRun);
+    newRun.reserve(cNewRun);
 
     // We will start analyzing from the beginning of our existing run.
     // Use some pointers to keep track of where we are in walking through our runs.
@@ -336,10 +411,9 @@ HRESULT ATTR_ROW::InsertAttrRuns(const std::basic_string_view<TextAttributeRun> 
     // Get the existing run that we'll be updating/manipulating.
     const auto existingRun = _list.begin();
     auto pExistingRunPos = existingRun;
-    const auto pExistingRunEnd = existingRun + _list.size();
+    const auto pExistingRunEnd = _list.end();
     auto pInsertRunPos = newAttrs.begin();
     size_t cInsertRunRemaining = newAttrs.size();
-    auto pNewRunPos = newRun.begin();
     size_t iExistingRunCoverage = 0;
 
     // Copy the existing run into the new buffer up to the "start index" where the new run will be injected.
@@ -353,7 +427,7 @@ HRESULT ATTR_ROW::InsertAttrRuns(const std::basic_string_view<TextAttributeRun> 
             iExistingRunCoverage += pExistingRunPos->GetLength();
 
             // Copy it to the new run buffer and advance both pointers.
-            *pNewRunPos++ = *pExistingRunPos++;
+            newRun.push_back(*pExistingRunPos++);
         }
 
         // When we get to this point, we've copied full segments from the original existing run
@@ -372,12 +446,8 @@ HRESULT ATTR_ROW::InsertAttrRuns(const std::basic_string_view<TextAttributeRun> 
         //      We need to fix this up below so it says G2 instead to leave room for the Y3 to fit in
         //      the new/final run.
 
-        // Copying above advanced the pointer to an empty cell beyond what we copied.
-        // Back up one cell so we can manipulate the final item we copied from the existing run to the new run.
-        pNewRunPos--;
-
         // Fetch out the length so we can fix it up based on the below conditions.
-        size_t length = pNewRunPos->GetLength();
+        size_t length = newRun.back().GetLength();
 
         // If we've covered more cells already than the start of the attributes to be inserted...
         if (iExistingRunCoverage > iStart)
@@ -392,7 +462,7 @@ HRESULT ATTR_ROW::InsertAttrRuns(const std::basic_string_view<TextAttributeRun> 
         // Now we're still on that "last cell copied" into the new run.
         // If the color of that existing copied cell matches the color of the first segment
         // of the run we're about to insert, we can just increment the length to extend the coverage.
-        if (pNewRunPos->GetAttributes() == pInsertRunPos->GetAttributes())
+        if (newRun.back().GetAttributes() == pInsertRunPos->GetAttributes())
         {
             length += pInsertRunPos->GetLength();
 
@@ -403,18 +473,11 @@ HRESULT ATTR_ROW::InsertAttrRuns(const std::basic_string_view<TextAttributeRun> 
         }
 
         // We're done manipulating the length. Store it back.
-        pNewRunPos->SetLength(length);
-
-        // Now that we're done adjusting the last copied item, advance the pointer into a fresh/blank
-        // part of the new run array.
-        pNewRunPos++;
+        newRun.back().SetLength(length);
     }
 
     // Bulk copy the majority (or all, depending on circumstance) of the insert run into the final run buffer.
-    std::copy_n(pInsertRunPos, cInsertRunRemaining, pNewRunPos);
-
-    // Advance the new run pointer into the position just after everything we copied.
-    pNewRunPos += cInsertRunRemaining;
+    std::copy_n(pInsertRunPos, cInsertRunRemaining, std::back_inserter(newRun));
 
     // We're technically done with the insert run now and have 0 remaining, but won't bother updating its pointers
     // and counts any further because we won't use them.
@@ -431,9 +494,6 @@ HRESULT ATTR_ROW::InsertAttrRuns(const std::basic_string_view<TextAttributeRun> 
     // If we still have original existing run cells remaining, copy them into the final new run.
     if (pExistingRunPos != pExistingRunEnd || iExistingRunCoverage != (iEnd + 1))
     {
-        // Back up one cell so we can inspect the most recent item copied into the new run for optimizations.
-        pNewRunPos--;
-
         // We advanced the existing run pointer and its count to on or past the end of what the insertion run filled in.
         // If this ended up being past the end of what the insertion run covers, we have to account for the cells after
         // the insertion run but before the next piece of the original existing run.
@@ -457,26 +517,26 @@ HRESULT ATTR_ROW::InsertAttrRuns(const std::basic_string_view<TextAttributeRun> 
             // This case is slightly off from the example above. This case is for if the B2 above was actually Y2.
             // That Y2 from the existing run is the same color as the Y2 we just filled a few columns left in the final run
             // so we can just adjust the final run's column count instead of adding another segment here.
-            if (pNewRunPos->GetAttributes() == pExistingRunPos->GetAttributes())
+            if (newRun.back().GetAttributes() == pExistingRunPos->GetAttributes())
             {
-                size_t length = pNewRunPos->GetLength();
+                size_t length = newRun.back().GetLength();
                 length += (iExistingRunCoverage - (iEnd + 1));
-                pNewRunPos->SetLength(length);
+                newRun.back().SetLength(length);
             }
             else
             {
                 // If the color didn't match, then we just need to copy the piece we skipped and adjust
-                // its length for the discrepency in columns not yet covered by the final/new run.
+                // its length for the discrepancy in columns not yet covered by the final/new run.
 
                 // Move forward to a blank spot in the new run
-                pNewRunPos++;
+                newRun.emplace_back();
 
                 // Copy the existing run's color information to the new run
-                pNewRunPos->SetAttributes(pExistingRunPos->GetAttributes());
+                newRun.back().SetAttributes(pExistingRunPos->GetAttributes());
 
                 // Adjust the length of that copied color to cover only the reduced number of columns needed
                 // now that some have been replaced by the insert run.
-                pNewRunPos->SetLength(iExistingRunCoverage - (iEnd + 1));
+                newRun.back().SetLength(iExistingRunCoverage - (iEnd + 1));
             }
 
             // Now that we're done recovering a piece of the existing run we skipped, move the pointer forward again.
@@ -494,41 +554,32 @@ HRESULT ATTR_ROW::InsertAttrRuns(const std::basic_string_view<TextAttributeRun> 
         // New Run desired when done = R3 -> B7
         // Existing run pointer is on B2.
         // We want to merge the 2 from the B2 into the B5 so we get B7.
-        else if (pNewRunPos->GetAttributes() == pExistingRunPos->GetAttributes())
+        else if (newRun.back().GetAttributes() == pExistingRunPos->GetAttributes())
         {
             // Add the value from the existing run into the current new run position.
-            size_t length = pNewRunPos->GetLength();
+            size_t length = newRun.back().GetLength();
             length += pExistingRunPos->GetLength();
-            pNewRunPos->SetLength(length);
+            newRun.back().SetLength(length);
 
             // Advance the existing run position since we consumed its value and merged it in.
             pExistingRunPos++;
         }
 
-        // OK. We're done inspecting the most recently copied cell for optimizations.
-        pNewRunPos++;
-
         // Now bulk copy any segments left in the original existing run
         if (pExistingRunPos < pExistingRunEnd)
         {
-            std::copy_n(pExistingRunPos, (pExistingRunEnd - pExistingRunPos), pNewRunPos);
-
-            // Fix up the end pointer so we know where we are for counting how much of the new run's memory space we used.
-            pNewRunPos += (pExistingRunEnd - pExistingRunPos);
+            std::copy_n(pExistingRunPos, (pExistingRunEnd - pExistingRunPos), std::back_inserter(newRun));
         }
     }
 
-    // OK, phew. We're done. Now we just need to free the existing run, store the new run in its place,
-    // and update the count for the correct length of the new run now that we've filled it up.
-
-    newRun.erase(pNewRunPos, newRun.end());
+    // OK, phew. We're done. Now we just need to free the existing run and store the new run in its place.
     _list.swap(newRun);
 
     return S_OK;
 }
 
 // Routine Description:
-// - packs a vector of TextAttribute into a vector of TextAttrbuteRun
+// - packs a vector of TextAttribute into a vector of TextAttributeRun
 // Arguments:
 // - attrs - text attributes to pack
 // Return Value:

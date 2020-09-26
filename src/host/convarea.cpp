@@ -10,6 +10,7 @@
 #pragma hdrstop
 
 using namespace Microsoft::Console::Types;
+using Microsoft::Console::Interactivity::ServiceLocator;
 
 bool IsValidSmallRect(_In_ PSMALL_RECT const Rect)
 {
@@ -76,8 +77,7 @@ void WriteConvRegionToScreen(const SCREEN_INFORMATION& ScreenInfo,
     }
 }
 
-[[nodiscard]]
-HRESULT ConsoleImeResizeCompStrView()
+[[nodiscard]] HRESULT ConsoleImeResizeCompStrView()
 {
     try
     {
@@ -90,8 +90,7 @@ HRESULT ConsoleImeResizeCompStrView()
     return S_OK;
 }
 
-[[nodiscard]]
-HRESULT ConsoleImeResizeCompStrScreenBuffer(const COORD coordNewScreenSize)
+[[nodiscard]] HRESULT ConsoleImeResizeCompStrScreenBuffer(const COORD coordNewScreenSize)
 {
     CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     ConsoleImeInfo* const pIme = &gci.ConsoleIme;
@@ -99,32 +98,38 @@ HRESULT ConsoleImeResizeCompStrScreenBuffer(const COORD coordNewScreenSize)
     return pIme->ResizeAllAreas(coordNewScreenSize);
 }
 
-[[nodiscard]]
-HRESULT ImeStartComposition()
+[[nodiscard]] HRESULT ImeStartComposition()
 {
     auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     gci.LockConsole();
     auto unlock = wil::scope_exit([&] { gci.UnlockConsole(); });
+
+    // MSFT:29219348 Some IME implementations do not produce composition strings, and
+    // their users have come to rely on the cursor that conhost traditionally left on
+    // until a composition string showed up.
+    // One such IME is WNWB's "Universal Wubi input method" from wnwb.com (v. 10+).
+    // We shouldn't hide the cursor here so as to not break those IMEs.
 
     gci.pInputBuffer->fInComposition = true;
     return S_OK;
 }
 
-[[nodiscard]]
-HRESULT ImeEndComposition()
+[[nodiscard]] HRESULT ImeEndComposition()
 {
     auto& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     gci.LockConsole();
     auto unlock = wil::scope_exit([&] { gci.UnlockConsole(); });
 
+    ConsoleImeInfo* const pIme = &gci.ConsoleIme;
+    pIme->RestoreCursorVisibility();
+
     gci.pInputBuffer->fInComposition = false;
     return S_OK;
 }
 
-[[nodiscard]]
-HRESULT ImeComposeData(std::wstring_view text,
-                       std::basic_string_view<BYTE> attributes,
-                       std::basic_string_view<WORD> colorArray)
+[[nodiscard]] HRESULT ImeComposeData(std::wstring_view text,
+                                     gsl::span<const BYTE> attributes,
+                                     gsl::span<const WORD> colorArray)
 {
     try
     {
@@ -139,8 +144,7 @@ HRESULT ImeComposeData(std::wstring_view text,
     return S_OK;
 }
 
-[[nodiscard]]
-HRESULT ImeClearComposeData()
+[[nodiscard]] HRESULT ImeClearComposeData()
 {
     try
     {
@@ -155,8 +159,7 @@ HRESULT ImeClearComposeData()
     return S_OK;
 }
 
-[[nodiscard]]
-HRESULT ImeComposeResult(std::wstring_view text)
+[[nodiscard]] HRESULT ImeComposeResult(std::wstring_view text)
 {
     try
     {

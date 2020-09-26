@@ -3,12 +3,14 @@
 # - Common Project Configuration
 # -------------------------------------
 
+!include $(OSDEPENDSROOT)\OSS\gsl\3.1.0\consume.inc
+
 # -------------------------------------
 # Preprocessor Settings
 # -------------------------------------
 
 UNICODE                 = 1
-C_DEFINES               = $(C_DEFINES) -DUNICODE -D_UNICODE
+C_DEFINES               = $(C_DEFINES) -DUNICODE -D_UNICODE -DFMT_HEADER_ONLY
 
 # -------------------------------------
 # CRT Configuration
@@ -16,6 +18,7 @@ C_DEFINES               = $(C_DEFINES) -DUNICODE -D_UNICODE
 
 USE_UNICRT              = 1
 USE_MSVCRT              = 1
+NO_WCHAR_T              = 1 # use native wchar_t
 
 USE_STL                 = 1
 STL_VER                 = STL_VER_CURRENT
@@ -26,7 +29,6 @@ USE_NATIVE_EH           = 1
 # -------------------------------------
 
 MSC_WARNING_LEVEL       = /W4 /WX
-USER_C_FLAGS            = $(USER_C_FLAGS) /std:c++17
 
 # -------------------------------------
 # Common Console Includes and Libraries
@@ -37,9 +39,16 @@ CONSOLE_OBJ_PATH        = $(WINCORE_OBJ_PATH)\console\open\src
 INCLUDES= \
     $(INCLUDES); \
     $(CONSOLE_SRC_PATH)\inc; \
+    $(CONSOLE_SRC_PATH)\..\..\inc; \
+    $(CONSOLE_SRC_PATH)\..\oss\dynamic_bitset; \
+    $(CONSOLE_SRC_PATH)\..\oss\libpopcnt; \
+    $(CONSOLE_SRC_PATH)\..\oss\chromium; \
+    $(CONSOLE_SRC_PATH)\..\oss\fmt\include; \
     $(MINWIN_INTERNAL_PRIV_SDK_INC_PATH_L); \
+    $(MINWIN_RESTRICTED_PRIV_SDK_INC_PATH_L); \
     $(MINCORE_INTERNAL_PRIV_SDK_INC_PATH_L); \
     $(ONECORE_INTERNAL_SDK_INC_PATH); \
+    $(ONECORE_EXTERNAL_SDK_INC_PATH); \
 
 # -------------------------------------
 # Linker Settings

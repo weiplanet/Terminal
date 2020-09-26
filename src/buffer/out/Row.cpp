@@ -30,14 +30,14 @@ size_t ROW::size() const noexcept
     return _rowWidth;
 }
 
-const CharRow& ROW::GetCharRow() const
+const CharRow& ROW::GetCharRow() const noexcept
 {
     return _charRow;
 }
 
-CharRow& ROW::GetCharRow()
+CharRow& ROW::GetCharRow() noexcept
 {
-    return const_cast<CharRow&>(static_cast<const ROW* const>(this)->GetCharRow());
+    return _charRow;
 }
 
 const ATTR_ROW& ROW::GetAttrRow() const noexcept
@@ -47,7 +47,7 @@ const ATTR_ROW& ROW::GetAttrRow() const noexcept
 
 ATTR_ROW& ROW::GetAttrRow() noexcept
 {
-    return const_cast<ATTR_ROW&>(static_cast<const ROW* const>(this)->GetAttrRow());
+    return _attrRow;
 }
 
 SHORT ROW::GetId() const noexcept
@@ -87,8 +87,7 @@ bool ROW::Reset(const TextAttribute Attr)
 // - width - the new width, in cells
 // Return Value:
 // - S_OK if successful, otherwise relevant error
-[[nodiscard]]
-HRESULT ROW::Resize(const size_t width)
+[[nodiscard]] HRESULT ROW::Resize(const size_t width)
 {
     RETURN_IF_FAILED(_charRow.Resize(width));
     try
@@ -133,12 +132,12 @@ RowCellIterator ROW::AsCellIter(const size_t startIndex, const size_t count) con
     return RowCellIterator(*this, startIndex, count);
 }
 
-UnicodeStorage& ROW::GetUnicodeStorage()
+UnicodeStorage& ROW::GetUnicodeStorage() noexcept
 {
     return _pParent->GetUnicodeStorage();
 }
 
-const UnicodeStorage& ROW::GetUnicodeStorage() const
+const UnicodeStorage& ROW::GetUnicodeStorage() const noexcept
 {
     return _pParent->GetUnicodeStorage();
 }
@@ -148,74 +147,111 @@ const UnicodeStorage& ROW::GetUnicodeStorage() const
 // Arguments:
 // - it - custom console iterator to use for seeking input data. bool() false when it becomes invalid while seeking.
 // - index - column in row to start writing at
-// - setWrap - set the wrap flags if we hit the end of the row while writing and there's still more data in the iterator.
+// - wrap - change the wrap flag if we hit the end of the row while writing and there's still more data in the iterator.
 // - limitRight - right inclusive column ID for the last write in this row. (optional, will just write to the end of row if nullopt)
 // Return Value:
-// - iterator to first cell that was not written to this row. 
-OutputCellIterator ROW::WriteCells(OutputCellIterator it, const size_t index, const bool setWrap, std::optional<size_t> limitRight)
+// - iterator to first cell that was not written to this row.
+OutputCellIterator ROW::WriteCells(OutputCellIterator it, const size_t index, const std::optional<bool> wrap, std::optional<size_t> limitRight)
 {
     THROW_HR_IF(E_INVALIDARG, index >= _charRow.size());
-    THROW_HR_IF(E_INVALIDARG, limitRight.value_or(0) >= _charRow.size()); 
+    THROW_HR_IF(E_INVALIDARG, limitRight.value_or(0) >= _charRow.size());
     size_t currentIndex = index;
 
     // If we're given a right-side column limit, use it. Otherwise, the write limit is the final column index available in the char row.
     const auto finalColumnInRow = limitRight.value_or(_charRow.size() - 1);
 
-    while (it && currentIndex <= finalColumnInRow)
+    if (it)
     {
-        // Fill the color if the behavior isn't set to keeping the current color.
-        if (it->TextAttrBehavior() != TextAttributeBehavior::Current)
+        // Accumulate usages of the same color so we can spend less time in InsertAttrRuns rewriting it.
+        auto currentColor = it->TextAttr();
+        size_t colorUses = 0;
+        size_t colorStarts = index;
+
+        while (it && currentIndex <= finalColumnInRow)
         {
-            const TextAttributeRun attrRun{ 1, it->TextAttr() };
-            LOG_IF_FAILED(_attrRow.InsertAttrRuns({ &attrRun, 1 },
-                                                  currentIndex,
-                                                  currentIndex,
-                                                  _charRow.size()));
-        }
-
-        // Fill the text if the behavior isn't set to saying there's only a color stored in this iterator.
-        if (it->TextAttrBehavior() != TextAttributeBehavior::StoredOnly)
-        {
-            const bool fillingLastColumn = currentIndex == finalColumnInRow;
-
-            // TODO: MSFT: 19452170 - We need to ensure when writing any trailing byte that the one to the left
-            // is a matching leading byte. Likewise, if we're writing a leading byte, we need to make sure we still have space in this loop
-            // for the trailing byte coming up before writing it.
-
-            // If we're trying to fill the first cell with a trailing byte, pad it out instead by clearing it.
-            // Don't increment iterator. We'll advance the index and try again with this value on the next round through the loop.
-            if (currentIndex == 0 && it->DbcsAttr().IsTrailing())
+            // Fill the color if the behavior isn't set to keeping the current color.
+            if (it->TextAttrBehavior() != TextAttributeBehavior::Current)
             {
-                _charRow.ClearCell(currentIndex);
+                // If the color of this cell is the same as the run we're currently on,
+                // just increment the counter.
+                if (currentColor == it->TextAttr())
+                {
+                    ++colorUses;
+                }
+                else
+                {
+                    // Otherwise, commit this color into the run and save off the new one.
+                    const TextAttributeRun run{ colorUses, currentColor };
+                    // Now commit the new color runs into the attr row.
+                    LOG_IF_FAILED(_attrRow.InsertAttrRuns({ &run, 1 },
+                                                          colorStarts,
+                                                          currentIndex - 1,
+                                                          _charRow.size()));
+                    currentColor = it->TextAttr();
+                    colorUses = 1;
+                    colorStarts = currentIndex;
+                }
             }
-            // If we're trying to fill the last cell with a leading byte, pad it out instead by clearing it.
-            // Don't increment iterator. We'll exit because we couldn't write a lead at the end of a line.
-            else if (fillingLastColumn && it->DbcsAttr().IsLeading())
+
+            // Fill the text if the behavior isn't set to saying there's only a color stored in this iterator.
+            if (it->TextAttrBehavior() != TextAttributeBehavior::StoredOnly)
             {
-                _charRow.ClearCell(currentIndex);
-                _charRow.SetDoubleBytePadded(true);
+                const bool fillingLastColumn = currentIndex == finalColumnInRow;
+
+                // TODO: MSFT: 19452170 - We need to ensure when writing any trailing byte that the one to the left
+                // is a matching leading byte. Likewise, if we're writing a leading byte, we need to make sure we still have space in this loop
+                // for the trailing byte coming up before writing it.
+
+                // If we're trying to fill the first cell with a trailing byte, pad it out instead by clearing it.
+                // Don't increment iterator. We'll advance the index and try again with this value on the next round through the loop.
+                if (currentIndex == 0 && it->DbcsAttr().IsTrailing())
+                {
+                    _charRow.ClearCell(currentIndex);
+                }
+                // If we're trying to fill the last cell with a leading byte, pad it out instead by clearing it.
+                // Don't increment iterator. We'll exit because we couldn't write a lead at the end of a line.
+                else if (fillingLastColumn && it->DbcsAttr().IsLeading())
+                {
+                    _charRow.ClearCell(currentIndex);
+                    _charRow.SetDoubleBytePadded(true);
+                }
+                // Otherwise, copy the data given and increment the iterator.
+                else
+                {
+                    _charRow.DbcsAttrAt(currentIndex) = it->DbcsAttr();
+                    _charRow.GlyphAt(currentIndex) = it->Chars();
+                    ++it;
+                }
+
+                // If we're asked to (un)set the wrap status and we just filled the last column with some text...
+                // NOTE:
+                //  - wrap = std::nullopt    --> don't change the wrap value
+                //  - wrap = true            --> we're filling cells as a steam, consider this a wrap
+                //  - wrap = false           --> we're filling cells as a block, unwrap
+                if (wrap.has_value() && fillingLastColumn)
+                {
+                    // set wrap status on the row to parameter's value.
+                    _charRow.SetWrapForced(wrap.value());
+                }
             }
-            // Otherwise, copy the data given and increment the iterator.
             else
             {
-                _charRow.DbcsAttrAt(currentIndex) = it->DbcsAttr();
-                _charRow.GlyphAt(currentIndex) = it->Chars();
                 ++it;
             }
 
-            // If we're asked to set the wrap status and we just filled the last column with some text, set wrap status on the row.
-            if (setWrap && fillingLastColumn)
-            {
-                _charRow.SetWrapForced(true);
-            }
-        }
-        else
-        {
-            ++it;
+            // Move to the next cell for the next time through the loop.
+            ++currentIndex;
         }
 
-        // Move to the next cell for the next time through the loop.
-        ++currentIndex;
+        // Now commit the final color into the attr row
+        if (colorUses)
+        {
+            const TextAttributeRun run{ colorUses, currentColor };
+            LOG_IF_FAILED(_attrRow.InsertAttrRuns({ &run, 1 },
+                                                  colorStarts,
+                                                  currentIndex - 1,
+                                                  _charRow.size()));
+        }
     }
 
     return it;

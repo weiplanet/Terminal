@@ -14,12 +14,13 @@
 #include "../types/inc/Utf16Parser.hpp"
 
 // Attributes flags:
-#define COMMON_LVB_GRID_SINGLEFLAG 0x2000   // DBCS: Grid attribute: use for ime cursor.
+#define COMMON_LVB_GRID_SINGLEFLAG 0x2000 // DBCS: Grid attribute: use for ime cursor.
+
+using Microsoft::Console::Interactivity::ServiceLocator;
 
 ConsoleImeInfo::ConsoleImeInfo() :
     _isSavedCursorVisible(false)
 {
-
 }
 
 // Routine Description:
@@ -56,18 +57,19 @@ void ConsoleImeInfo::RedrawCompMessage()
 // - attributes - Encoded attributes including the cursor position and the color index (to the array)
 // - colorArray - An array of colors to use for the text
 void ConsoleImeInfo::WriteCompMessage(const std::wstring_view text,
-                                      const std::basic_string_view<BYTE> attributes,
-                                      const std::basic_string_view<WORD> colorArray)
+                                      const gsl::span<const BYTE> attributes,
+                                      const gsl::span<const WORD> colorArray)
 {
-    // Backup the cursor visibility state and turn it off for drawing.
-    _SaveCursorVisibility();
-
     ClearAllAreas();
+
+    // MSFT:29219348 only hide the cursor after the IME produces a string.
+    // See notes in convarea.cpp ImeStartComposition().
+    SaveCursorVisibility();
 
     // Save copies of the composition message in case we need to redraw it as things scroll/resize
     _text = text;
-    _attributes = attributes;
-    _colorArray = colorArray;
+    _attributes.assign(attributes.begin(), attributes.end());
+    _colorArray.assign(colorArray.begin(), colorArray.end());
 
     _WriteUndeterminedChars(text, attributes, colorArray);
 }
@@ -79,8 +81,6 @@ void ConsoleImeInfo::WriteCompMessage(const std::wstring_view text,
 // - text - The actual text of what the user would like to insert (UTF-16)
 void ConsoleImeInfo::WriteResultMessage(const std::wstring_view text)
 {
-    _RestoreCursorVisibility();
-
     ClearAllAreas();
 
     _InsertConvertedString(text);
@@ -119,8 +119,7 @@ void ConsoleImeInfo::ClearAllAreas()
 // - newSize - New size for conversion areas
 // Return Value:
 // - S_OK or appropriate failure HRESULT.
-[[nodiscard]]
-HRESULT ConsoleImeInfo::ResizeAllAreas(const COORD newSize)
+[[nodiscard]] HRESULT ConsoleImeInfo::ResizeAllAreas(const COORD newSize)
 {
     for (auto& area : ConvAreaCompStr)
     {
@@ -142,8 +141,7 @@ HRESULT ConsoleImeInfo::ResizeAllAreas(const COORD newSize)
 // - <none>
 // Return Value:
 // - Status successful or appropriate HRESULT response.
-[[nodiscard]]
-HRESULT ConsoleImeInfo::_AddConversionArea()
+[[nodiscard]] HRESULT ConsoleImeInfo::_AddConversionArea()
 {
     const CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
 
@@ -152,11 +150,9 @@ HRESULT ConsoleImeInfo::_AddConversionArea()
 
     const COORD windowSize = gci.GetActiveOutputBuffer().GetViewport().Dimensions();
 
-    CHAR_INFO fill;
-    fill.Attributes = gci.GetActiveOutputBuffer().GetAttributes().GetLegacyAttributes();
+    const TextAttribute fill = gci.GetActiveOutputBuffer().GetAttributes();
 
-    CHAR_INFO popupFill;
-    popupFill.Attributes = gci.GetActiveOutputBuffer().GetPopupAttributes()->GetLegacyAttributes();
+    const TextAttribute popupFill = gci.GetActiveOutputBuffer().GetPopupAttributes();
 
     const FontInfo& fontInfo = gci.GetActiveOutputBuffer().GetCurrentFont();
 
@@ -185,8 +181,8 @@ HRESULT ConsoleImeInfo::_AddConversionArea()
 // Return Value:
 // - TextAttribute object with color and cursor and line drawing data.
 TextAttribute ConsoleImeInfo::s_RetrieveAttributeAt(const size_t pos,
-                                                    const std::basic_string_view<BYTE> attributes,
-                                                    const std::basic_string_view<WORD> colorArray)
+                                                    const gsl::span<const BYTE> attributes,
+                                                    const gsl::span<const WORD> colorArray)
 {
     // Encoded attribute is the shorthand information passed from the IME
     // that contains a cursor position packed in along with which color in the
@@ -222,8 +218,8 @@ TextAttribute ConsoleImeInfo::s_RetrieveAttributeAt(const size_t pos,
 // Return Value:
 // - Vector of OutputCells where each one represents one cell of the output buffer.
 std::vector<OutputCell> ConsoleImeInfo::s_ConvertToCells(const std::wstring_view text,
-                                                         const std::basic_string_view<BYTE> attributes,
-                                                         const std::basic_string_view<WORD> colorArray)
+                                                         const gsl::span<const BYTE> attributes,
+                                                         const gsl::span<const WORD> colorArray)
 {
     std::vector<OutputCell> cells;
 
@@ -264,6 +260,7 @@ std::vector<OutputCell> ConsoleImeInfo::s_ConvertToCells(const std::wstring_view
         if (IsGlyphFullWidth(glyph))
         {
             auto leftHalfAttr = drawingAttr;
+            auto rightHalfAttr = drawingAttr;
 
             // Don't draw lines in the middle of full width glyphs.
             // If we need a right vertical, don't apply it to the left side of the character
@@ -277,12 +274,16 @@ std::vector<OutputCell> ConsoleImeInfo::s_ConvertToCells(const std::wstring_view
             dbcsAttr.SetTrailing();
 
             // If we need a left vertical, don't apply it to the right side of the character
-            if (drawingAttr.IsLeftVerticalDisplayed())
+            if (rightHalfAttr.IsLeftVerticalDisplayed())
             {
-                drawingAttr.SetLeftVerticalDisplayed(false);
+                rightHalfAttr.SetLeftVerticalDisplayed(false);
             }
+            cells.emplace_back(glyph, dbcsAttr, rightHalfAttr);
         }
-        cells.emplace_back(glyph, dbcsAttr, drawingAttr);
+        else
+        {
+            cells.emplace_back(glyph, dbcsAttr, drawingAttr);
+        }
     }
 
     return cells;
@@ -392,8 +393,8 @@ std::vector<OutputCell>::const_iterator ConsoleImeInfo::_WriteConversionArea(con
 //                each text character. This view must be the same size as the text view.
 // - colorArray - 8 colors to be used to format the text for display
 void ConsoleImeInfo::_WriteUndeterminedChars(const std::wstring_view text,
-                                             const std::basic_string_view<BYTE> attributes,
-                                             const std::basic_string_view<WORD> colorArray)
+                                             const gsl::span<const BYTE> attributes,
+                                             const gsl::span<const WORD> colorArray)
 {
     CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     SCREEN_INFORMATION& screenInfo = gci.GetActiveOutputBuffer();
@@ -454,11 +455,11 @@ void ConsoleImeInfo::_InsertConvertedString(const std::wstring_view text)
     const DWORD dwControlKeyState = GetControlKeyState(0);
     std::deque<std::unique_ptr<IInputEvent>> inEvents;
     KeyEvent keyEvent{ TRUE, // keydown
-        1, // repeatCount
-        0, // virtualKeyCode
-        0, // virtualScanCode
-        0, // charData
-        dwControlKeyState }; // activeModifierKeys
+                       1, // repeatCount
+                       0, // virtualKeyCode
+                       0, // virtualScanCode
+                       0, // charData
+                       dwControlKeyState }; // activeModifierKeys
 
     for (const auto& ch : text)
     {
@@ -472,7 +473,7 @@ void ConsoleImeInfo::_InsertConvertedString(const std::wstring_view text)
 // Routine Description:
 // - Backs up the global cursor visibility state if it is shown and disables
 //   it while we work on the conversion areas.
-void ConsoleImeInfo::_SaveCursorVisibility()
+void ConsoleImeInfo::SaveCursorVisibility()
 {
     CONSOLE_INFORMATION& gci = ServiceLocator::LocateGlobals().getConsoleInformation();
     Cursor& cursor = gci.GetActiveOutputBuffer().GetTextBuffer().GetCursor();
@@ -488,7 +489,7 @@ void ConsoleImeInfo::_SaveCursorVisibility()
 
 // Routine Description:
 // - Restores the global cursor visibility state if it was on when it was backed up.
-void ConsoleImeInfo::_RestoreCursorVisibility()
+void ConsoleImeInfo::RestoreCursorVisibility()
 {
     if (_isSavedCursorVisible)
     {

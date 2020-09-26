@@ -22,6 +22,8 @@
 
 #pragma hdrstop
 
+using Microsoft::Console::Interactivity::ServiceLocator;
+
 // I need to be a list because we rearrange elements inside to maintain a
 // "least recently used" state. Doing many rearrangement operations with
 // a list will maintain the iterator pointers as valid to the elements
@@ -88,9 +90,8 @@ void CommandHistory::_Reset()
     WI_SetFlag(Flags, CLE_RESET);
 }
 
-[[nodiscard]]
-HRESULT CommandHistory::Add(const std::wstring_view newCommand,
-                            const bool suppressDuplicates)
+[[nodiscard]] HRESULT CommandHistory::Add(const std::wstring_view newCommand,
+                                          const bool suppressDuplicates)
 {
     RETURN_HR_IF(E_OUTOFMEMORY, _maxCommands == 0);
     FAIL_FAST_IF(WI_IsFlagClear(Flags, CLE_ALLOCATED));
@@ -104,8 +105,10 @@ HRESULT CommandHistory::Add(const std::wstring_view newCommand,
     {
         if (_commands.size() == 0 ||
             _commands.back().size() != newCommand.size() ||
-            !std::equal(_commands.back().cbegin(), _commands.back().cbegin() + newCommand.size(),
-                        newCommand.cbegin(), newCommand.cend()))
+            !std::equal(_commands.back().cbegin(),
+                        _commands.back().cbegin() + newCommand.size(),
+                        newCommand.cbegin(),
+                        newCommand.cend()))
         {
             std::wstring reuse{};
 
@@ -139,8 +142,10 @@ HRESULT CommandHistory::Add(const std::wstring_view newCommand,
 
             if (LastDisplayed == -1 ||
                 _commands.at(LastDisplayed).size() != newCommand.size() ||
-                !std::equal(_commands.at(LastDisplayed).cbegin(), _commands.at(LastDisplayed).cbegin() + newCommand.size(),
-                            newCommand.cbegin(), newCommand.cend()))
+                !std::equal(_commands.at(LastDisplayed).cbegin(),
+                            _commands.at(LastDisplayed).cbegin() + newCommand.size(),
+                            newCommand.cbegin(),
+                            newCommand.cend()))
             {
                 _Reset();
             }
@@ -163,10 +168,9 @@ std::wstring_view CommandHistory::GetNth(const SHORT index) const
     return {};
 }
 
-[[nodiscard]]
-HRESULT CommandHistory::RetrieveNth(const SHORT index,
-                                    gsl::span<wchar_t> buffer,
-                                    size_t& commandSize)
+[[nodiscard]] HRESULT CommandHistory::RetrieveNth(const SHORT index,
+                                                  gsl::span<wchar_t> buffer,
+                                                  size_t& commandSize)
 {
     LastDisplayed = index;
 
@@ -191,10 +195,9 @@ HRESULT CommandHistory::RetrieveNth(const SHORT index,
     CATCH_RETURN();
 }
 
-[[nodiscard]]
-HRESULT CommandHistory::Retrieve(const SearchDirection searchDirection,
-                                 const gsl::span<wchar_t> buffer,
-                                 size_t& commandSize)
+[[nodiscard]] HRESULT CommandHistory::Retrieve(const SearchDirection searchDirection,
+                                               const gsl::span<wchar_t> buffer,
+                                               size_t& commandSize)
 {
     FAIL_FAST_IF(!(WI_IsFlagSet(Flags, CLE_ALLOCATED)));
 
@@ -247,7 +250,7 @@ void CommandHistory::Empty()
 {
     _commands.clear();
     LastDisplayed = -1;
-    Flags = CLE_RESET;
+    WI_SetFlag(Flags, CLE_RESET);
 }
 
 bool CommandHistory::AtFirstCommand() const
@@ -381,7 +384,6 @@ CommandHistory* CommandHistory::s_Allocate(const std::wstring_view appName, cons
                 break;
             }
         }
-
     }
 
     // If the app name doesn't match, copy in the new app name and free the old commands.
@@ -497,14 +499,12 @@ std::wstring CommandHistory::Remove(const SHORT iDel)
     return {};
 }
 
-
 // Routine Description:
 // - this routine finds the most recent command that starts with the letters already in the current command.  it returns the array index (no mod needed).
-[[nodiscard]]
-bool CommandHistory::FindMatchingCommand(const std::wstring_view givenCommand,
-                                         const SHORT startingIndex,
-                                         SHORT& indexFound,
-                                         const MatchOptions options)
+[[nodiscard]] bool CommandHistory::FindMatchingCommand(const std::wstring_view givenCommand,
+                                                       const SHORT startingIndex,
+                                                       SHORT& indexFound,
+                                                       const MatchOptions options)
 {
     indexFound = startingIndex;
 
@@ -534,8 +534,10 @@ bool CommandHistory::FindMatchingCommand(const std::wstring_view givenCommand,
             const auto& storedCommand = _commands.at(indexFound);
             if ((WI_IsFlagClear(options, MatchOptions::ExactMatch) && (givenCommand.size() <= storedCommand.size())) || (givenCommand.size() == storedCommand.size()))
             {
-                if (std::equal(storedCommand.begin(), storedCommand.begin() + givenCommand.size(),
-                               givenCommand.begin(), givenCommand.end(),
+                if (std::equal(storedCommand.begin(),
+                               storedCommand.begin() + givenCommand.size(),
+                               givenCommand.begin(),
+                               givenCommand.end(),
                                CaseInsensitiveEquality))
                 {
                     return true;
@@ -760,7 +762,7 @@ HRESULT ApiRoutines::GetConsoleCommandHistoryLengthWImpl(const std::wstring_view
 }
 
 // Routine Description:
-// - Retrieves a the full command history for a given EXE name known to the console.
+// - Retrieves the full command history for a given EXE name known to the console.
 // - It is permitted to call this function without having a target buffer. Use the result to allocate
 //   the appropriate amount of space and call again.
 // - This behavior exists to allow the A version of the function to help allocate the right temp buffer for conversion of
@@ -780,7 +782,7 @@ HRESULT GetConsoleCommandHistoryWImplHelper(const std::wstring_view exeName,
     writtenOrNeeded = 0;
     if (historyBuffer.size() > 0)
     {
-        historyBuffer.at(0) = UNICODE_NULL;
+        til::at(historyBuffer, 0) = UNICODE_NULL;
     }
 
     CommandHistory* const CommandHistory = CommandHistory::s_FindByExe(exeName);
@@ -810,7 +812,7 @@ HRESULT GetConsoleCommandHistoryWImplHelper(const std::wstring_view exeName,
                 size_t cchNewTotal;
                 RETURN_IF_FAILED(SizeTAdd(cchTotalLength, cchNeeded, &cchNewTotal));
 
-                RETURN_HR_IF(HRESULT_FROM_WIN32(ERROR_BUFFER_OVERFLOW), cchNewTotal > gsl::narrow<size_t>(historyBuffer.size()));
+                RETURN_HR_IF(HRESULT_FROM_WIN32(ERROR_BUFFER_OVERFLOW), cchNewTotal > historyBuffer.size());
 
                 size_t cchRemaining;
                 RETURN_IF_FAILED(SizeTSub(historyBuffer.size(),
@@ -835,7 +837,7 @@ HRESULT GetConsoleCommandHistoryWImplHelper(const std::wstring_view exeName,
 }
 
 // Routine Description:
-// - Retrieves a the full command history for a given EXE name known to the console.
+// - Retrieves the full command history for a given EXE name known to the console.
 // - Converts inputs from A to W, calls the W version of this method, and then converts the resulting text W to A.
 // Arguments:
 // - exeName - The client EXE application attached to the host whose set we should check
@@ -857,7 +859,7 @@ HRESULT ApiRoutines::GetConsoleCommandHistoryAImpl(const std::string_view exeNam
     {
         if (commandHistory.size() > 0)
         {
-            commandHistory.at(0) = ANSI_NULL;
+            til::at(commandHistory, 0) = ANSI_NULL;
         }
 
         LockConsole();
@@ -887,7 +889,7 @@ HRESULT ApiRoutines::GetConsoleCommandHistoryAImpl(const std::string_view exeNam
         // Copy safely to output buffer
         // - CommandHistory are a series of null terminated strings. We cannot use a SafeString function to copy.
         //   So instead, validate and use raw memory copy.
-        RETURN_HR_IF(HRESULT_FROM_WIN32(ERROR_BUFFER_OVERFLOW), converted.size() > gsl::narrow<size_t>(commandHistory.size()));
+        RETURN_HR_IF(HRESULT_FROM_WIN32(ERROR_BUFFER_OVERFLOW), converted.size() > commandHistory.size());
         memcpy_s(commandHistory.data(), commandHistory.size(), converted.data(), converted.size());
 
         // And return the size copied.
@@ -899,7 +901,7 @@ HRESULT ApiRoutines::GetConsoleCommandHistoryAImpl(const std::string_view exeNam
 }
 
 // Routine Description:
-// - Retrieves a the full command history for a given EXE name known to the console.
+// - Retrieves the full command history for a given EXE name known to the console.
 // - Converts inputs from A to W, calls the W version of this method, and then converts the resulting text W to A.
 // Arguments:
 // - exeName - The client EXE application attached to the host whose set we should check

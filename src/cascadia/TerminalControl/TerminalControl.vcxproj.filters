@@ -11,19 +11,27 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp" />
-    <ClCompile Include="KeyChord.cpp" />
     <ClCompile Include="TermControl.cpp" />
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
+    <ClCompile Include="TermControlAutomationPeer.cpp" />
+    <ClCompile Include="XamlUiaTextRange.cpp" />
+    <ClCompile Include="SearchBoxControl.cpp" />
+    <ClCompile Include="init.cpp" />
+    <ClCompile Include="ThrottledFunc.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
-    <ClInclude Include="KeyChord.h" />
     <ClInclude Include="TermControl.h" />
+    <ClInclude Include="TermControlAutomationPeer.h" />
+    <ClInclude Include="XamlUiaTextRange.h" />
+    <ClInclude Include="ThrottledFunc.h" />
   </ItemGroup>
   <ItemGroup>
     <Midl Include="TermControl.idl" />
-    <Midl Include="KeyChord.idl" />
-    <Midl Include="IKeyBindings.idl" />
+    <Midl Include="TermControlAutomationPeer.idl" />
+    <Midl Include="SearchBoxControl.idl" />
+    <Midl Include="TSFInputControl.idl" />
+    <Midl Include="IMouseWheelListener.idl" />
     <Midl Include="IControlSettings.idl" />
   </ItemGroup>
   <ItemGroup>
@@ -31,6 +39,16 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <Page Include="SearchBoxControl.xaml" />
+    <Page Include="TermControl.xaml" />
+    <Page Include="TSFInputControl.xaml" />
+  </ItemGroup>
+  <ItemGroup>
     <Natvis Include="$(SolutionDir)tools\ConsoleTypes.natvis" />
+  </ItemGroup>
+  <ItemGroup>
+    <PRIResource Include="Resources\en-US\Resources.resw">
+      <Filter>Resources</Filter>
+    </PRIResource>
   </ItemGroup>
 </Project>

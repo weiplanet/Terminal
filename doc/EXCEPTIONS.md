@@ -9,12 +9,12 @@ sometimes it's significantly simpler to use them. Given that, we have a set of r
 exception use.
 
 ## Rules
-1. **DO NOT** allow exceptions to leak out of new code into new code
-1. **DO** use NTSTATUS or HRESULT as return values as appropriate
-1. **DO** Encapsulate all exception behaviors within implementing classes
+1. **DO NOT** allow exceptions to leak out of new code into old code
+1. **DO** use `NTSTATUS` or `HRESULT` as return values as appropriate (`HRESULT` is preferred)
+1. **DO** encapsulate all exception behaviors within implementing classes
 1. **DO NOT** introduce modern exception throwing code into old code. Instead, refactor as needed to allow encapsulation or
    use non-exception based code
-1. **DO** use WIL as an alternative for non-throwing modern facilities (e.g. wil::unique_ptr<>)
+1. **DO** use WIL as an alternative for non-throwing modern facilities (e.g. `wil::unique_ptr<>`)
 
 ## Examples
 
@@ -33,4 +33,4 @@ exception use.
 
 ### Using WIL for non-throwing modern facilities
 
-### 
+TODO

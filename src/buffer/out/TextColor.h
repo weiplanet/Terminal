@@ -28,7 +28,7 @@ Revision History:
 - From components of output.h/.c
   by Therese Stowell (ThereseS) 1990-1991
 - Pulled into its own file from textBuffer.hpp/cpp (AustDi, 2017)
-- Moved the colors into their own seperate abstraction. (migrie Nov 2018)
+- Moved the colors into their own separate abstraction. (migrie Nov 2018)
 --*/
 
 #pragma once
@@ -41,15 +41,15 @@ Revision History:
 
 enum class ColorType : BYTE
 {
-    IsIndex = 0x0,
-    IsDefault = 0x1,
-    IsRgb = 0x2
+    IsIndex256 = 0x0,
+    IsIndex16 = 0x1,
+    IsDefault = 0x2,
+    IsRgb = 0x3
 };
 
 struct TextColor
 {
 public:
-
     constexpr TextColor() noexcept :
         _meta{ ColorType::IsDefault },
         _red{ 0 },
@@ -58,9 +58,9 @@ public:
     {
     }
 
-    constexpr TextColor(const BYTE wLegacyAttr) noexcept :
-        _meta{ ColorType::IsIndex },
-        _index{ wLegacyAttr },
+    constexpr TextColor(const BYTE index, const bool isIndex256) noexcept :
+        _meta{ isIndex256 ? ColorType::IsIndex256 : ColorType::IsIndex16 },
+        _index{ index },
         _green{ 0 },
         _blue{ 0 }
     {
@@ -77,34 +77,29 @@ public:
     friend constexpr bool operator==(const TextColor& a, const TextColor& b) noexcept;
     friend constexpr bool operator!=(const TextColor& a, const TextColor& b) noexcept;
 
-    constexpr bool IsLegacy() const noexcept
-    {
-        return !(IsDefault() || IsRgb());
-    }
+    bool CanBeBrightened() const noexcept;
+    bool IsLegacy() const noexcept;
+    bool IsIndex16() const noexcept;
+    bool IsIndex256() const noexcept;
+    bool IsDefault() const noexcept;
+    bool IsRgb() const noexcept;
 
-    constexpr bool IsDefault() const noexcept
-    {
-        return _meta == ColorType::IsDefault;
-    }
+    void SetColor(const COLORREF rgbColor) noexcept;
+    void SetIndex(const BYTE index, const bool isIndex256) noexcept;
+    void SetDefault() noexcept;
 
-    constexpr bool IsRgb() const noexcept
-    {
-        return _meta == ColorType::IsRgb;
-    }
-
-    void SetColor(const COLORREF rgbColor);
-    void SetIndex(const BYTE index);
-    void SetDefault();
-
-    COLORREF GetColor(std::basic_string_view<COLORREF> colorTable,
+    COLORREF GetColor(gsl::span<const COLORREF> colorTable,
                       const COLORREF defaultColor,
-                      const bool brighten) const;
+                      const bool brighten = false) const noexcept;
+
+    BYTE GetLegacyIndex(const BYTE defaultIndex) const noexcept;
 
     constexpr BYTE GetIndex() const noexcept
     {
         return _index;
     }
 
+    COLORREF GetRGB() const noexcept;
 
 private:
     ColorType _meta : 2;
@@ -115,11 +110,10 @@ private:
     BYTE _green;
     BYTE _blue;
 
-    COLORREF _GetRGB() const;
-
 #ifdef UNIT_TESTING
     friend class TextBufferTests;
-    template<typename TextColor> friend class WEX::TestExecution::VerifyOutputTraits;
+    template<typename TextColor>
+    friend class WEX::TestExecution::VerifyOutputTraits;
 #endif
 };
 
@@ -140,10 +134,12 @@ bool constexpr operator!=(const TextColor& a, const TextColor& b) noexcept
 
 #ifdef UNIT_TESTING
 
-namespace WEX {
-    namespace TestExecution {
+namespace WEX
+{
+    namespace TestExecution
+    {
         template<>
-        class VerifyOutputTraits < TextColor >
+        class VerifyOutputTraits<TextColor>
         {
         public:
             static WEX::Common::NoThrowString ToString(const TextColor& color)
@@ -154,7 +150,7 @@ namespace WEX {
                 }
                 else if (color.IsRgb())
                 {
-                    return WEX::Common::NoThrowString().Format(L"{RGB:0x%06x}", color._GetRGB());
+                    return WEX::Common::NoThrowString().Format(L"{RGB:0x%06x}", color.GetRGB());
                 }
                 else
                 {
@@ -166,4 +162,4 @@ namespace WEX {
 }
 #endif
 
-static_assert(sizeof(TextColor) <= 4*sizeof(BYTE), "We should only need 4B for an entire TextColor. Any more than that is just waste");
+static_assert(sizeof(TextColor) <= 4 * sizeof(BYTE), "We should only need 4B for an entire TextColor. Any more than that is just waste");

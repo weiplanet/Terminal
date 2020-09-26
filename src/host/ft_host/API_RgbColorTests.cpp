@@ -3,9 +3,11 @@
 
 #include "precomp.h"
 
+using namespace WEX::Common;
+
 HANDLE g_hOut = INVALID_HANDLE_VALUE;
 CONSOLE_SCREEN_BUFFER_INFOEX g_sbiex_backup = { 0 };
-COORD g_cWriteSize = {16, 16};
+COORD g_cWriteSize = { 16, 16 };
 
 const int LEGACY_MODE = 0;
 const int VT_SIMPLE_MODE = 1;
@@ -18,12 +20,6 @@ const int VT_256_GRID_MODE = 4;
 class RgbColorTests
 {
     BEGIN_TEST_CLASS(RgbColorTests)
-        TEST_CLASS_PROPERTY(L"BinaryUnderTest", L"conhost.exe")
-        TEST_CLASS_PROPERTY(L"ArtifactUnderTest", L"wincon.h")
-        TEST_CLASS_PROPERTY(L"ArtifactUnderTest", L"winconp.h")
-        TEST_CLASS_PROPERTY(L"ArtifactUnderTest", L"wincontypes.h")
-        TEST_CLASS_PROPERTY(L"ArtifactUnderTest", L"conmsgl1.h")
-        TEST_CLASS_PROPERTY(L"ArtifactUnderTest", L"conmsgl2.h")
     END_TEST_CLASS()
 
     TEST_METHOD_SETUP(MethodSetup)
@@ -90,11 +86,11 @@ WORD WinToVTColor(int winColor, bool isForeground)
     bool blue = (winColor & FOREGROUND_BLUE) > 0;
     bool bright = (winColor & FOREGROUND_INTENSITY) > 0;
 
-    WORD result = isForeground? 30 : 40;
-    result += bright? 60 : 0;
-    result += red? 1 : 0;
-    result += green? 2 : 0;
-    result += blue? 4 : 0;
+    WORD result = isForeground ? 30 : 40;
+    result += bright ? 60 : 0;
+    result += red ? 1 : 0;
+    result += green ? 2 : 0;
+    result += blue ? 4 : 0;
 
     return result;
 }
@@ -112,7 +108,7 @@ int WinToXtermIndex(int iWinColor)
     bool fGreen = (iWinColor & 0x02) > 0;
     bool fBlue = (iWinColor & 0x01) > 0;
     bool fBright = (iWinColor & 0x08) > 0;
-    int iXtermTableEntry = (fRed? 0x1:0x0) | (fGreen? 0x2:0x0) | (fBlue? 0x4:0x0) | (fBright? 0x8:0x0);
+    int iXtermTableEntry = (fRed ? 0x1 : 0x0) | (fGreen ? 0x2 : 0x0) | (fBlue ? 0x4 : 0x0) | (fBright ? 0x8 : 0x0);
     return iXtermTableEntry;
 }
 
@@ -215,7 +211,6 @@ BOOL CreateColorGrid(int iColorMode)
                         break;
                     default:
                         VERIFY_ARE_EQUAL(true, false, L"Did not provide a valid color mode");
-
                     }
                 }
                 switch (iColorMode)
@@ -232,7 +227,6 @@ BOOL CreateColorGrid(int iColorMode)
                     break;
                 default:
                     VERIFY_ARE_EQUAL(true, false, L"Did not provide a valid color mode");
-
                 }
             }
             fSuccess = totalWritten == (1 * 16 * 16);
@@ -240,7 +234,6 @@ BOOL CreateColorGrid(int iColorMode)
     }
 
     return fSuccess;
-
 }
 
 BOOL CreateLegacyColorGrid()
@@ -261,13 +254,13 @@ BOOL ValidateLegacyColorGrid(COORD cursorPosInitial)
 
     CHAR_INFO* rOutputBuffer = new CHAR_INFO[actualWriteSize.X * actualWriteSize.Y];
 
-    SMALL_RECT srReadRegion = {0};
+    SMALL_RECT srReadRegion = { 0 };
     srReadRegion.Top = cursorPosInitial.Y;
     srReadRegion.Left = cursorPosInitial.X;
     srReadRegion.Right = srReadRegion.Left + actualWriteSize.X;
     srReadRegion.Bottom = srReadRegion.Top + actualWriteSize.Y;
 
-    BOOL fSuccess = ReadConsoleOutput(g_hOut, rOutputBuffer, actualWriteSize, {0}, &srReadRegion);
+    BOOL fSuccess = ReadConsoleOutput(g_hOut, rOutputBuffer, actualWriteSize, { 0 }, &srReadRegion);
     VERIFY_WIN32_BOOL_SUCCEEDED(fSuccess, L"Read the output back");
     if (fSuccess)
     {
@@ -279,7 +272,7 @@ BOOL ValidateLegacyColorGrid(COORD cursorPosInitial)
                 WORD wExpected = MakeAttribute(fg, bg);
                 VERIFY_ARE_EQUAL(pInfo->Attributes, wExpected, NoThrowString().Format(L"fg, bg = (%d,%d)", fg, bg));
                 fSuccess &= pInfo->Attributes == wExpected;
-                pInfo+=1;// We wrote one character each time
+                pInfo += 1; // We wrote one character each time
             }
         }
     }
@@ -296,13 +289,13 @@ BOOL Validate256GridToLegacy(COORD cursorPosInitial)
 
     CHAR_INFO* rOutputBuffer = new CHAR_INFO[actualWriteSize.X * actualWriteSize.Y];
 
-    SMALL_RECT srReadRegion = {0};
+    SMALL_RECT srReadRegion = { 0 };
     srReadRegion.Top = cursorPosInitial.Y;
     srReadRegion.Left = cursorPosInitial.X;
     srReadRegion.Right = srReadRegion.Left + actualWriteSize.X;
     srReadRegion.Bottom = srReadRegion.Top + actualWriteSize.Y;
 
-    BOOL fSuccess = ReadConsoleOutput(g_hOut, rOutputBuffer, actualWriteSize, {0}, &srReadRegion);
+    BOOL fSuccess = ReadConsoleOutput(g_hOut, rOutputBuffer, actualWriteSize, { 0 }, &srReadRegion);
     VERIFY_WIN32_BOOL_SUCCEEDED(fSuccess, L"Read the output back");
     if (fSuccess)
     {
@@ -327,21 +320,21 @@ BOOL Validate256GridToLegacy(COORD cursorPosInitial)
 
         // Verify some other locations in the table, that will be RGB->Legacy conversions.
         VERIFY_ARE_EQUAL(GetGridAttrs(1, 1, rOutputBuffer, actualWriteSize), MakeAttribute(0x1, 0x1));
-        VERIFY_ARE_EQUAL(GetGridAttrs(2, 1, rOutputBuffer, actualWriteSize), MakeAttribute(0xB, 0xB));
+        VERIFY_ARE_EQUAL(GetGridAttrs(3, 3, rOutputBuffer, actualWriteSize), MakeAttribute(0xB, 0xB));
         VERIFY_ARE_EQUAL(GetGridAttrs(2, 2, rOutputBuffer, actualWriteSize), MakeAttribute(0x2, 0x2));
-        VERIFY_ARE_EQUAL(GetGridAttrs(2, 3, rOutputBuffer, actualWriteSize), MakeAttribute(0x3, 0x3));
-        VERIFY_ARE_EQUAL(GetGridAttrs(3, 4, rOutputBuffer, actualWriteSize), MakeAttribute(0x4, 0x4));
+        VERIFY_ARE_EQUAL(GetGridAttrs(2, 1, rOutputBuffer, actualWriteSize), MakeAttribute(0x3, 0x3));
+        VERIFY_ARE_EQUAL(GetGridAttrs(5, 8, rOutputBuffer, actualWriteSize), MakeAttribute(0x4, 0x4));
         VERIFY_ARE_EQUAL(GetGridAttrs(3, 5, rOutputBuffer, actualWriteSize), MakeAttribute(0x5, 0x5));
-        VERIFY_ARE_EQUAL(GetGridAttrs(4, 5, rOutputBuffer, actualWriteSize), MakeAttribute(0x9, 0x9));
-        VERIFY_ARE_EQUAL(GetGridAttrs(4, 6, rOutputBuffer, actualWriteSize), MakeAttribute(0x6, 0x6));
-        VERIFY_ARE_EQUAL(GetGridAttrs(4, 7, rOutputBuffer, actualWriteSize), MakeAttribute(0x7, 0x7));
+        VERIFY_ARE_EQUAL(GetGridAttrs(6, 8, rOutputBuffer, actualWriteSize), MakeAttribute(0x9, 0x9));
+        VERIFY_ARE_EQUAL(GetGridAttrs(8, 8, rOutputBuffer, actualWriteSize), MakeAttribute(0x6, 0x6));
+        VERIFY_ARE_EQUAL(GetGridAttrs(9, 8, rOutputBuffer, actualWriteSize), MakeAttribute(0x7, 0x7));
         VERIFY_ARE_EQUAL(GetGridAttrs(3, 11, rOutputBuffer, actualWriteSize), MakeAttribute(0x8, 0x8));
         VERIFY_ARE_EQUAL(GetGridAttrs(3, 12, rOutputBuffer, actualWriteSize), MakeAttribute(0x1, 0x1));
         VERIFY_ARE_EQUAL(GetGridAttrs(4, 12, rOutputBuffer, actualWriteSize), MakeAttribute(0xA, 0xA));
-        VERIFY_ARE_EQUAL(GetGridAttrs(5, 12, rOutputBuffer, actualWriteSize), MakeAttribute(0xD, 0xD));
-        VERIFY_ARE_EQUAL(GetGridAttrs(10, 12, rOutputBuffer, actualWriteSize), MakeAttribute(0xE, 0xE));
-        VERIFY_ARE_EQUAL(GetGridAttrs(10, 13, rOutputBuffer, actualWriteSize), MakeAttribute(0xC, 0xC));
-        VERIFY_ARE_EQUAL(GetGridAttrs(11, 13, rOutputBuffer, actualWriteSize), MakeAttribute(0xF, 0xF));
+        VERIFY_ARE_EQUAL(GetGridAttrs(8, 1, rOutputBuffer, actualWriteSize), MakeAttribute(0xD, 0xD));
+        VERIFY_ARE_EQUAL(GetGridAttrs(12, 0, rOutputBuffer, actualWriteSize), MakeAttribute(0xE, 0xE));
+        VERIFY_ARE_EQUAL(GetGridAttrs(12, 4, rOutputBuffer, actualWriteSize), MakeAttribute(0xC, 0xC));
+        VERIFY_ARE_EQUAL(GetGridAttrs(12, 3, rOutputBuffer, actualWriteSize), MakeAttribute(0xF, 0xF));
 
         // Greyscale ramp
         VERIFY_ARE_EQUAL(GetGridAttrs(14, 8, rOutputBuffer, actualWriteSize), MakeAttribute(0x0, 0x0));
@@ -356,8 +349,6 @@ BOOL Validate256GridToLegacy(COORD cursorPosInitial)
 
         VERIFY_ARE_EQUAL(GetGridAttrs(15, 14, rOutputBuffer, actualWriteSize), MakeAttribute(0xF, 0xF));
         VERIFY_ARE_EQUAL(GetGridAttrs(15, 15, rOutputBuffer, actualWriteSize), MakeAttribute(0xF, 0xF));
-
-
     }
     delete[] rOutputBuffer;
     return fSuccess;

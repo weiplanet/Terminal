@@ -27,12 +27,12 @@ SOURCES = \
     ..\paint.cpp \
     ..\state.cpp \
     ..\tracing.cpp \
-    ..\WinTelnetEngine.cpp \
     ..\XtermEngine.cpp \
     ..\Xterm256Engine.cpp \
     ..\VtSequences.cpp \
 
 INCLUDES = \
+    $(INCLUDES); \
     ..; \
     ..\..\..\inc; \
     $(MINWIN_INTERNAL_PRIV_SDK_INC_PATH_L); \

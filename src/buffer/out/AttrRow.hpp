@@ -41,17 +41,17 @@ public:
     size_t FindAttrIndex(const size_t index,
                          size_t* const pApplies) const;
 
+    std::unordered_set<uint16_t> GetHyperlinks();
+
     bool SetAttrToEnd(const UINT iStart, const TextAttribute attr);
-    void ReplaceLegacyAttrs(const WORD wToBeReplacedAttr, const WORD wReplaceWith) noexcept;
     void ReplaceAttrs(const TextAttribute& toBeReplacedAttr, const TextAttribute& replaceWith) noexcept;
 
     void Resize(const size_t newWidth);
 
-    [[nodiscard]]
-    HRESULT InsertAttrRuns(const std::basic_string_view<TextAttributeRun> newAttrs,
-                           const size_t iStart,
-                           const size_t iEnd,
-                           const size_t cBufferWidth);
+    [[nodiscard]] HRESULT InsertAttrRuns(const gsl::span<const TextAttributeRun> newAttrs,
+                                         const size_t iStart,
+                                         const size_t iEnd,
+                                         const size_t cBufferWidth);
 
     static std::vector<TextAttributeRun> PackAttrs(const std::vector<TextAttribute>& attrs);
 
@@ -65,12 +65,10 @@ public:
     friend class AttrRowIterator;
 
 private:
-
     std::vector<TextAttributeRun> _list;
     size_t _cchRowWidth;
 
 #ifdef UNIT_TESTING
     friend class AttrRowTests;
 #endif
-
 };

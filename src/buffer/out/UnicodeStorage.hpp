@@ -21,10 +21,9 @@ Author(s):
 // std::unordered_map needs help to know how to hash a COORD
 namespace std
 {
-    template <>
+    template<>
     struct hash<COORD>
     {
-
         // Routine Description:
         // - hashes a coord. coord will be hashed by storing the x and y values consecutively in the lower
         // bits of a size_t.
@@ -48,7 +47,7 @@ public:
     using key_type = typename COORD;
     using mapped_type = typename std::vector<wchar_t>;
 
-    UnicodeStorage();
+    UnicodeStorage() noexcept;
 
     const mapped_type& GetText(const key_type key) const;
 
@@ -56,7 +55,7 @@ public:
 
     void Erase(const key_type key) noexcept;
 
-    void Remap(const std::map<SHORT, SHORT>& rowMap, const std::optional<SHORT> width);
+    void Remap(const std::unordered_map<SHORT, SHORT>& rowMap, const std::optional<SHORT> width);
 
 private:
     std::unordered_map<key_type, mapped_type> _map;
